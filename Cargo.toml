@@ -1,0 +1,14 @@
+[package]
+name = "edit_rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crossterm = "0.28"
+ratatui = "0.28"
+syntect = "5.2"
+unicode-width = "0.1"
+crossterm = "0.28"
+ratatui = "0.28"
+syntect = "5.2"
+unicode-width = "0.1"
