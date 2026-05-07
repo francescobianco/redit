@@ -9,6 +9,7 @@ use std::{io, panic};
 mod app;
 mod editor;
 mod syntax;
+mod theme;
 
 use app::App;
 
