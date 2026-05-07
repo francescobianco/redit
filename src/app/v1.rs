@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::{Clear, Paragraph},
-    Frame,
 };
 
 use super::App;
@@ -16,25 +16,27 @@ impl App {
     ///   scrollbar on the last row, no bottom border.
     pub(super) fn render_editor_v1(&mut self, f: &mut Frame, area: Rect) {
         let t = &self.theme;
-        let frame_style  = Style::default().bg(t.frame_bg).fg(t.frame_fg);
-        let side_style   = Style::default().bg(t.edit_bg).fg(t.frame_fg);
-        let title_style  = Style::default().bg(t.title_bg).fg(t.title_fg);
+        let frame_style = Style::default().bg(t.frame_bg).fg(t.frame_fg);
+        let side_style = Style::default().bg(t.edit_bg).fg(t.frame_fg);
+        let title_style = Style::default().bg(t.title_bg).fg(t.title_fg);
         let scroll_style = Style::default().bg(t.scroll_bg).fg(t.scroll_fg);
-        let base         = Style::default().bg(t.edit_bg).fg(t.edit_fg);
-        let cur_style    = Style::default().bg(t.edit_fg).fg(t.edit_bg);
-        let w            = area.width as usize;
+        let base = Style::default().bg(t.edit_bg).fg(t.edit_fg);
+        let cur_style = Style::default().bg(t.edit_fg).fg(t.edit_bg);
+        let w = area.width as usize;
 
         // ── Top border with centred filename ──────────────────────────────────
-        let fname = self.editor.filename
+        let fname = self
+            .editor
+            .filename
             .as_deref()
             .and_then(|p| std::path::Path::new(p).file_name())
             .and_then(|n| n.to_str())
-            .unwrap_or("UNTITLED1")
-            .to_uppercase();
+            .unwrap_or("Untitled")
+            .to_string();
         let title_inner = format!(" {} ", fname);
-        let tl      = title_inner.len();
-        let dashes  = w.saturating_sub(2 + tl);
-        let left_d  = dashes / 2;
+        let tl = title_inner.len();
+        let dashes = w.saturating_sub(2 + tl);
+        let left_d = dashes.saturating_sub(1) / 2;
         let right_d = dashes - left_d;
 
         let mut top_spans: Vec<Span> = Vec::new();
@@ -50,9 +52,9 @@ impl App {
 
         // ── Content rows (area.height - 2: top border + horizontal scrollbar)
         let content_h = (area.height - 2) as usize;
-        let text_w    = w.saturating_sub(2); // between │ and vertical scrollbar
+        let text_w = w.saturating_sub(2); // between │ and vertical scrollbar
 
-        let (cx, cy)    = self.editor.cursor;
+        let (cx, cy) = self.editor.cursor;
         let total_lines = self.editor.lines.len();
 
         // Adjust scroll
@@ -97,21 +99,24 @@ impl App {
             }
 
             let chars: Vec<char> = self.editor.lines[line_idx].chars().collect();
-            let on_this_line     = line_idx == cy;
+            let on_this_line = line_idx == cy;
             Self::render_text_row(f, text_area, &chars, sx, cx, on_this_line, base, cur_style);
         }
 
         // ── Horizontal scrollbar (last row of edit area) ──────────────────────
         let hscroll_y = area.y + area.height - 1;
-        let track_w   = w.saturating_sub(4); // between ← and →, inside │…│
-        let max_line_w = self.editor.lines.iter()
+        let track_w = w.saturating_sub(5); // space after left arrow, then track
+        let max_line_w = self
+            .editor
+            .lines
+            .iter()
             .map(|l| l.chars().count())
             .max()
             .unwrap_or(0);
         let h_thumb = Self::hscroll_thumb(sx, text_w, max_line_w, track_w);
 
         let mut hbar: Vec<Span> = Vec::new();
-        hbar.push(Span::styled("│←", scroll_style));
+        hbar.push(Span::styled("│← ", scroll_style));
         for i in 0..track_w {
             let ch = if h_thumb.1 > 0 && i >= h_thumb.0 && i < h_thumb.0 + h_thumb.1 {
                 "█"
@@ -134,17 +139,33 @@ impl App {
         total_doc: usize,
         scroll_y: usize,
     ) -> &'static str {
-        if row == 0 { return "↑"; }
-        if row == content_h - 1 { return "↓"; }
-        if content_h <= 2 { return "░"; }
+        if row == 0 {
+            return "↑";
+        }
+        if row == content_h - 1 {
+            return "↓";
+        }
+        if content_h <= 2 {
+            return "░";
+        }
         let body = content_h - 2;
-        if total_doc <= content_h { return "░"; }
+        if total_doc <= content_h {
+            return "░";
+        }
         let thumb_size = (body * content_h / total_doc).max(1).min(body);
         let max_offset = body - thumb_size;
         let max_scroll = total_doc - content_h;
-        let thumb_pos  = if max_scroll == 0 { 0 } else { max_offset * scroll_y / max_scroll };
-        let body_row   = row - 1;
-        if body_row >= thumb_pos && body_row < thumb_pos + thumb_size { "█" } else { "░" }
+        let thumb_pos = if max_scroll == 0 {
+            0
+        } else {
+            max_offset * scroll_y / max_scroll
+        };
+        let body_row = row - 1;
+        if body_row >= thumb_pos && body_row < thumb_pos + thumb_size {
+            "█"
+        } else {
+            "░"
+        }
     }
 
     /// (thumb_start, thumb_size) for the horizontal scrollbar track.
@@ -155,42 +176,46 @@ impl App {
         max_line_w: usize,
         track_w: usize,
     ) -> (usize, usize) {
-        if max_line_w <= view_w || track_w == 0 { return (0, 0); }
+        if max_line_w <= view_w || track_w == 0 {
+            return (0, 0);
+        }
         let thumb_size = (track_w * view_w / max_line_w).max(1).min(track_w);
         let max_scroll = max_line_w - view_w;
-        let thumb_pos  = (track_w - thumb_size) * scroll_x / max_scroll;
+        let thumb_pos = (track_w - thumb_size) * scroll_x / max_scroll;
         (thumb_pos, thumb_size)
     }
 
     // ── V1 welcome / credits dialog ───────────────────────────────────────────
 
     pub(super) fn welcome_dialog(&self, f: &mut Frame) {
-        let t    = &self.theme;
-        let area = Self::center_rect(f, 62, 11);
+        let t = &self.theme;
+        let size = f.area();
+        let area = Rect::new(
+            size.width.saturating_sub(58) / 2 + 1,
+            (size.height.saturating_sub(11) / 2).saturating_sub(2),
+            58.min(size.width),
+            11.min(size.height),
+        );
         f.render_widget(Clear, area);
 
-        let dlg_style  = Style::default().bg(t.dlg_bg).fg(t.dlg_fg);
+        let dlg_style = Style::default().bg(t.dlg_bg).fg(t.dlg_fg);
         let line_style = Style::default().bg(t.frame_bg).fg(t.frame_fg);
-        let iw         = area.width as usize - 2;
+        let iw = area.width as usize - 2;
 
         // Top border
         f.render_widget(
-            Paragraph::new(Span::styled(
-                format!("┌{}┐", "─".repeat(iw)),
-                line_style,
-            )),
+            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(iw)), line_style)),
             Rect::new(area.x, area.y, area.width, 1),
         );
 
         let rows: &[&str] = &[
             "",
-            "         Welcome to the redit Editor",
+            "              Welcome to the MS-DOS Editor",
             "",
-            "  Copyright (c) 2026 Francesco Bianco. All rights reserved.",
-            "  Faithful MS-DOS EDIT clone written in Rust.",
+            "     Copyright (C) Microsoft Corporation, 1987-1992.",
+            "                  All rights reserved.",
             "",
-            "       < Press Enter to see keyboard shortcuts >",
-            "",
+            "       < Press Enter to see the Survival Guide >",
         ];
 
         for (i, &row) in rows.iter().enumerate() {
@@ -217,7 +242,7 @@ impl App {
         );
 
         // ESC dismiss row
-        let esc_y    = sep_y + 1;
+        let esc_y = sep_y + 1;
         let esc_text = format!("{:^w$}", "< Press ESC to clear this dialog box >", w = iw);
         f.render_widget(
             Paragraph::new(Span::styled("│", line_style)),
