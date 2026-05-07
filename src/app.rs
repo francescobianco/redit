@@ -1,0 +1,1003 @@
+use crossterm::event::{
+    self, Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind,
+};
+use ratatui::{
+    backend::Backend,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, Paragraph},
+    Frame, Terminal,
+};
+use std::io;
+
+use crate::editor::Editor;
+
+// ── MS-DOS EDIT colour palette ────────────────────────────────────────────────
+const C_MENU_BG: Color = Color::Gray;
+const C_MENU_FG: Color = Color::Black;
+const C_DROP_BG: Color = Color::White;
+const C_DROP_FG: Color = Color::Black;
+const C_DROP_SEL_BG: Color = Color::Black;
+const C_DROP_SEL_FG: Color = Color::White;
+const C_EDIT_BG: Color = Color::Blue;
+const C_EDIT_FG: Color = Color::White;
+const C_STAT_BG: Color = Color::Gray;
+const C_STAT_FG: Color = Color::Black;
+const C_DLG_BG: Color = Color::Cyan;
+const C_DLG_FG: Color = Color::Black;
+const C_DLG_BTN_BG: Color = Color::Black;
+const C_DLG_BTN_FG: Color = Color::White;
+const C_DLG_INP_BG: Color = Color::White;
+const C_DLG_INP_FG: Color = Color::Black;
+
+// ── Menu definitions ──────────────────────────────────────────────────────────
+const MENUS: &[&str] = &["File", "Edit", "Search", "Options", "Help"];
+
+const MENU_ITEMS: &[&[(&str, &str)]] = &[
+    &[
+        ("New", ""),
+        ("Open...", ""),
+        ("Save", "Ctrl+S"),
+        ("Save As...", ""),
+        ("", ""),
+        ("Exit", ""),
+    ],
+    &[
+        ("Cut", "Ctrl+X"),
+        ("Copy", "Ctrl+C"),
+        ("Paste", "Ctrl+V"),
+        ("Clear", "Del"),
+    ],
+    &[
+        ("Find...", "Ctrl+F"),
+        ("Repeat Last Find", "F3"),
+        ("Change...", "Ctrl+H"),
+        ("", ""),
+        ("Go To Line...", "Ctrl+G"),
+    ],
+    &[("Scrollbars", "")],
+    &[
+        ("Getting Started", ""),
+        ("Keyboard", ""),
+        ("", ""),
+        ("About...", ""),
+    ],
+];
+
+// ── App mode ──────────────────────────────────────────────────────────────────
+#[derive(Debug, Clone, PartialEq)]
+enum Mode {
+    Normal,
+    Menu { menu: usize, item: usize },
+    Open(String),
+    SaveAs(String),
+    Find(String),
+    Goto(String),
+    Replace { find: String, replace: String, focus: usize },
+    ConfirmNew,
+    ConfirmExit,
+    About,
+}
+
+pub struct App {
+    editor: Editor,
+    mode: Mode,
+    last_find: String,
+    message: Option<String>,
+    page_height: usize,
+}
+
+impl App {
+    pub fn new() -> Self {
+        let mut editor = Editor::new();
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() > 1 {
+            let _ = editor.load_file(&args[1]);
+        }
+        Self {
+            editor,
+            mode: Mode::Normal,
+            last_find: String::new(),
+            message: None,
+            page_height: 20,
+        }
+    }
+
+    pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
+        loop {
+            terminal.draw(|f| self.render(f))?;
+
+            if !event::poll(std::time::Duration::from_millis(50))? {
+                continue;
+            }
+
+            match event::read()? {
+                Event::Key(k) => {
+                    if self.handle_key(k) {
+                        break;
+                    }
+                }
+                Event::Mouse(m) => self.handle_mouse(m),
+                Event::Resize(_, h) => {
+                    self.page_height = h.saturating_sub(4) as usize;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────────
+
+    fn render(&mut self, f: &mut Frame) {
+        let size = f.area();
+        let menu_area = Rect::new(0, 0, size.width, 1);
+        let edit_area = Rect::new(0, 1, size.width, size.height.saturating_sub(2));
+        let stat_area = Rect::new(0, size.height.saturating_sub(1), size.width, 1);
+
+        self.render_editor(f, edit_area);
+        self.render_menu_bar(f, menu_area);
+        self.render_status_bar(f, stat_area);
+
+        if let Mode::Menu { menu, item } = &self.mode {
+            let (m, i) = (*menu, *item);
+            self.render_dropdown(f, m, i);
+        }
+
+        let mode = self.mode.clone();
+        self.render_dialog(f, &mode);
+    }
+
+    fn render_menu_bar(&self, f: &mut Frame, area: Rect) {
+        let fill = " ".repeat(area.width as usize);
+        f.render_widget(
+            Paragraph::new(Span::styled(fill, Style::default().bg(C_MENU_BG).fg(C_MENU_FG))),
+            area,
+        );
+
+        let mut spans: Vec<Span> = vec![Span::styled(
+            " ",
+            Style::default().bg(C_MENU_BG).fg(C_MENU_FG),
+        )];
+        for (i, name) in MENUS.iter().enumerate() {
+            let selected = matches!(&self.mode, Mode::Menu { menu, .. } if *menu == i);
+            let style = if selected {
+                Style::default().bg(C_DROP_SEL_BG).fg(C_DROP_SEL_FG)
+            } else {
+                Style::default().bg(C_MENU_BG).fg(C_MENU_FG)
+            };
+            spans.push(Span::styled(format!(" {} ", name), style));
+        }
+
+        f.render_widget(
+            Paragraph::new(Line::from(spans)),
+            area,
+        );
+    }
+
+    fn menu_x(menu_idx: usize) -> u16 {
+        let mut x = 1u16;
+        for i in 0..menu_idx {
+            x += MENUS[i].len() as u16 + 2;
+        }
+        x
+    }
+
+    fn render_dropdown(&self, f: &mut Frame, menu_idx: usize, selected: usize) {
+        let items = MENU_ITEMS[menu_idx];
+        let max_name = items.iter().map(|(n, _)| n.len()).max().unwrap_or(4);
+        let max_sc = items.iter().map(|(_, s)| s.len()).max().unwrap_or(0);
+        let inner_w = if max_sc > 0 {
+            max_name + max_sc + 4
+        } else {
+            max_name + 2
+        };
+        let width = (inner_w + 2) as u16;
+        let height = (items.len() + 2) as u16;
+        let x = Self::menu_x(menu_idx);
+        let area = Rect::new(x, 1, width, height);
+
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(C_DROP_FG).bg(C_DROP_BG))
+            .style(Style::default().bg(C_DROP_BG).fg(C_DROP_FG));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        for (i, (name, shortcut)) in items.iter().enumerate() {
+            let row = Rect::new(inner.x, inner.y + i as u16, inner.width, 1);
+            if name.is_empty() {
+                let sep = "─".repeat(inner.width as usize);
+                f.render_widget(
+                    Paragraph::new(Span::styled(
+                        sep,
+                        Style::default().fg(Color::DarkGray).bg(C_DROP_BG),
+                    )),
+                    row,
+                );
+                continue;
+            }
+
+            let style = if i == selected {
+                Style::default().fg(C_DROP_SEL_FG).bg(C_DROP_SEL_BG)
+            } else {
+                Style::default().fg(C_DROP_FG).bg(C_DROP_BG)
+            };
+
+            let w = inner.width as usize;
+            let text = if shortcut.is_empty() {
+                format!(" {:<pad$} ", name, pad = w.saturating_sub(2))
+            } else {
+                let gap = w.saturating_sub(name.len() + shortcut.len() + 3);
+                format!(" {}{}{} ", name, " ".repeat(gap), shortcut)
+            };
+
+            f.render_widget(Paragraph::new(Span::styled(text, style)), row);
+        }
+    }
+
+    fn render_editor(&mut self, f: &mut Frame, area: Rect) {
+        if area.height < 3 || area.width < 3 {
+            return;
+        }
+
+        // ── Draw ASCII border (MS-DOS EDIT style) ────────────────────────────
+        let border_style = Style::default().bg(C_EDIT_BG).fg(C_EDIT_FG);
+        let w = area.width as usize;
+
+        // Top border: ┌─────────────────────┐
+        let top = format!("┌{}┐", "─".repeat(w.saturating_sub(2)));
+        f.render_widget(
+            Paragraph::new(Span::styled(top, border_style)),
+            Rect::new(area.x, area.y, area.width, 1),
+        );
+        // Bottom border: └─────────────────────┘
+        let bot = format!("└{}┘", "─".repeat(w.saturating_sub(2)));
+        f.render_widget(
+            Paragraph::new(Span::styled(bot, border_style)),
+            Rect::new(area.x, area.y + area.height - 1, area.width, 1),
+        );
+
+        // ── Inner text area ──────────────────────────────────────────────────
+        let inner = Rect::new(
+            area.x + 1,
+            area.y + 1,
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
+        let vh = inner.height as usize;
+        let vw = inner.width as usize;
+        let (cx, cy) = self.editor.cursor;
+
+        // Adjust scroll
+        if cy < self.editor.scroll.1 as usize {
+            self.editor.scroll.1 = cy as u16;
+        } else if cy >= self.editor.scroll.1 as usize + vh {
+            self.editor.scroll.1 = (cy + 1 - vh) as u16;
+        }
+        if cx < self.editor.scroll.0 as usize {
+            self.editor.scroll.0 = cx as u16;
+        } else if cx >= self.editor.scroll.0 as usize + vw {
+            self.editor.scroll.0 = (cx + 1 - vw) as u16;
+        }
+
+        let sy = self.editor.scroll.1 as usize;
+        let sx = self.editor.scroll.0 as usize;
+
+        let base = Style::default().bg(C_EDIT_BG).fg(C_EDIT_FG);
+        let cur_style = Style::default().bg(C_EDIT_FG).fg(C_EDIT_BG);
+
+        for row in 0..vh {
+            let line_idx = sy + row;
+            // Left │
+            f.render_widget(
+                Paragraph::new(Span::styled("│", border_style)),
+                Rect::new(area.x, inner.y + row as u16, 1, 1),
+            );
+            // Right │
+            f.render_widget(
+                Paragraph::new(Span::styled("│", border_style)),
+                Rect::new(area.x + area.width - 1, inner.y + row as u16, 1, 1),
+            );
+
+            let row_area = Rect::new(inner.x, inner.y + row as u16, inner.width, 1);
+
+            if line_idx >= self.editor.lines.len() {
+                f.render_widget(
+                    Paragraph::new(Span::styled(" ".repeat(vw), base)),
+                    row_area,
+                );
+                continue;
+            }
+
+            let chars: Vec<char> = self.editor.lines[line_idx].chars().collect();
+            let on_this_line = line_idx == cy;
+
+            if !on_this_line {
+                let s: String = chars.iter().skip(sx).take(vw).collect();
+                let pad = vw.saturating_sub(s.chars().count());
+                f.render_widget(
+                    Paragraph::new(Span::styled(format!("{}{}", s, " ".repeat(pad)), base)),
+                    row_area,
+                );
+            } else {
+                let mut spans: Vec<Span> = Vec::new();
+
+                if cx > sx {
+                    let s: String = chars.iter().skip(sx).take(cx - sx).collect();
+                    spans.push(Span::styled(s, base));
+                }
+
+                let cur_ch = chars.get(cx).copied().unwrap_or(' ');
+                spans.push(Span::styled(cur_ch.to_string(), cur_style));
+
+                let after_start = cx + 1;
+                let after_end = (sx + vw).min(chars.len());
+                if after_start < after_end {
+                    let s: String = chars[after_start..after_end].iter().collect();
+                    spans.push(Span::styled(s, base));
+                }
+
+                let used = (cx.saturating_sub(sx) + 1).min(vw)
+                    + after_end.saturating_sub(after_start);
+                let remaining = vw.saturating_sub(used);
+                if remaining > 0 {
+                    spans.push(Span::styled(" ".repeat(remaining), base));
+                }
+
+                f.render_widget(Paragraph::new(Line::from(spans)), row_area);
+            }
+        }
+    }
+
+    fn render_status_bar(&self, f: &mut Frame, area: Rect) {
+        let (cx, cy) = self.editor.cursor;
+        let ovr = if self.editor.overtype { "OVR" } else { "   " };
+        let dirty = if self.editor.dirty { "*" } else { " " };
+        let fname = self.editor.filename.as_deref().unwrap_or("Untitled");
+        let w = area.width as usize;
+
+        let right = format!("{}  Ln:{:>4}  Col:{:>3}  {}", dirty, cy + 1, cx + 1, ovr);
+        let left = if let Some(m) = &self.message {
+            format!(" {}", m)
+        } else {
+            format!(" F1=Help  {}", fname)
+        };
+
+        let right_len = right.len();
+        let left = if left.len() + right_len + 1 > w {
+            left[..w.saturating_sub(right_len + 1)].to_string()
+        } else {
+            left
+        };
+        let pad = w.saturating_sub(left.len() + right_len);
+        let line = format!("{}{}{}", left, " ".repeat(pad), right);
+
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("{:<w$}", line, w = w),
+                Style::default().bg(C_STAT_BG).fg(C_STAT_FG),
+            )),
+            area,
+        );
+    }
+
+    fn render_dialog(&self, f: &mut Frame, mode: &Mode) {
+        match mode {
+            Mode::Open(s) => self.input_dialog(f, "Open", "File Name:", s),
+            Mode::SaveAs(s) => self.input_dialog(f, "Save As", "File Name:", s),
+            Mode::Find(s) => self.input_dialog(f, "Find", "Find What:", s),
+            Mode::Goto(s) => self.input_dialog(f, "Go To Line", "Line Number:", s),
+            Mode::ConfirmNew => self.confirm_dialog(f, "New File", "Discard unsaved changes?"),
+            Mode::ConfirmExit => self.confirm_dialog(f, "Exit", "Discard unsaved changes and exit?"),
+            Mode::About => self.about_dialog(f),
+            Mode::Replace { find, replace, focus } => {
+                self.replace_dialog(f, find, replace, *focus)
+            }
+            _ => {}
+        }
+    }
+
+    fn center_rect(f: &Frame, w: u16, h: u16) -> Rect {
+        let s = f.area();
+        Rect::new(
+            s.width.saturating_sub(w) / 2,
+            s.height.saturating_sub(h) / 2,
+            w.min(s.width),
+            h.min(s.height),
+        )
+    }
+
+    fn input_dialog(&self, f: &mut Frame, title: &str, label: &str, input: &str) {
+        let area = Self::center_rect(f, 52, 7);
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .title(format!(" {} ", title))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(C_DLG_FG).bg(C_DLG_BG))
+            .style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        f.render_widget(
+            Paragraph::new(label).style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG)),
+            Rect::new(inner.x + 1, inner.y + 1, inner.width - 2, 1),
+        );
+        let iw = inner.width.saturating_sub(2);
+        f.render_widget(
+            Paragraph::new(format!("{:<w$}", input, w = iw as usize))
+                .style(Style::default().bg(C_DLG_INP_BG).fg(C_DLG_INP_FG)),
+            Rect::new(inner.x + 1, inner.y + 2, iw, 1),
+        );
+        self.btn(f, inner.x + 1, inner.y + 4, "[ OK ]");
+        self.btn(f, inner.x + 9, inner.y + 4, "[ Cancel ]");
+    }
+
+    fn confirm_dialog(&self, f: &mut Frame, title: &str, msg: &str) {
+        let area = Self::center_rect(f, 52, 7);
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .title(format!(" {} ", title))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(C_DLG_FG).bg(C_DLG_BG))
+            .style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        f.render_widget(
+            Paragraph::new(msg).style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG)),
+            Rect::new(inner.x + 1, inner.y + 1, inner.width - 2, 1),
+        );
+        self.btn(f, inner.x + 1, inner.y + 3, "[ Yes ]");
+        self.btn(f, inner.x + 10, inner.y + 3, "[ No ]");
+        self.btn(f, inner.x + 18, inner.y + 3, "[ Cancel ]");
+    }
+
+    fn about_dialog(&self, f: &mut Frame) {
+        let area = Self::center_rect(f, 42, 9);
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .title(" About redit ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(C_DLG_FG).bg(C_DLG_BG))
+            .style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let lines = vec![
+            Line::from(Span::styled(
+                "  redit  v0.1.0",
+                Style::default()
+                    .fg(C_DLG_FG)
+                    .bg(C_DLG_BG)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  MS-DOS EDIT clone written in Rust",
+                Style::default().fg(C_DLG_FG).bg(C_DLG_BG),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Copyright (c) 2026 Francesco Bianco",
+                Style::default().fg(C_DLG_FG).bg(C_DLG_BG),
+            )),
+        ];
+        f.render_widget(
+            Paragraph::new(lines).style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG)),
+            Rect::new(inner.x, inner.y + 1, inner.width, 5),
+        );
+        self.btn(f, inner.x + (inner.width - 8) / 2, inner.y + 6, "[  OK  ]");
+    }
+
+    fn replace_dialog(&self, f: &mut Frame, find: &str, replace: &str, focus: usize) {
+        let area = Self::center_rect(f, 55, 10);
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .title(" Change ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(C_DLG_FG).bg(C_DLG_BG))
+            .style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let iw = inner.width.saturating_sub(2);
+
+        f.render_widget(
+            Paragraph::new("Find What:").style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG)),
+            Rect::new(inner.x + 1, inner.y + 1, inner.width - 2, 1),
+        );
+        let (fbg, ffg) = if focus == 0 {
+            (C_DLG_INP_BG, C_DLG_INP_FG)
+        } else {
+            (C_DLG_BG, C_DLG_FG)
+        };
+        f.render_widget(
+            Paragraph::new(format!("{:<w$}", find, w = iw as usize))
+                .style(Style::default().bg(fbg).fg(ffg)),
+            Rect::new(inner.x + 1, inner.y + 2, iw, 1),
+        );
+
+        f.render_widget(
+            Paragraph::new("Replace With:").style(Style::default().bg(C_DLG_BG).fg(C_DLG_FG)),
+            Rect::new(inner.x + 1, inner.y + 4, inner.width - 2, 1),
+        );
+        let (rbg, rfg) = if focus == 1 {
+            (C_DLG_INP_BG, C_DLG_INP_FG)
+        } else {
+            (C_DLG_BG, C_DLG_FG)
+        };
+        f.render_widget(
+            Paragraph::new(format!("{:<w$}", replace, w = iw as usize))
+                .style(Style::default().bg(rbg).fg(rfg)),
+            Rect::new(inner.x + 1, inner.y + 5, iw, 1),
+        );
+
+        self.btn(f, inner.x + 1, inner.y + 7, "[ OK ]");
+        self.btn(f, inner.x + 9, inner.y + 7, "[ Cancel ]");
+    }
+
+    fn btn(&self, f: &mut Frame, x: u16, y: u16, label: &str) {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                label,
+                Style::default().bg(C_DLG_BTN_BG).fg(C_DLG_BTN_FG),
+            )),
+            Rect::new(x, y, label.len() as u16, 1),
+        );
+    }
+
+    // ── Event handling ────────────────────────────────────────────────────────
+
+    fn handle_key(&mut self, key: KeyEvent) -> bool {
+        match self.mode.clone() {
+            Mode::Normal => self.key_normal(key),
+            Mode::Menu { menu, item } => self.key_menu(key, menu, item),
+            Mode::Open(_) => self.key_open(key),
+            Mode::SaveAs(_) => self.key_save_as(key),
+            Mode::Find(_) => self.key_find(key),
+            Mode::Goto(_) => self.key_goto(key),
+            Mode::Replace { find, replace, focus } => self.key_replace(key, find, replace, focus),
+            Mode::ConfirmNew => self.key_confirm_new(key),
+            Mode::ConfirmExit => self.key_confirm_exit(key),
+            Mode::About => {
+                self.mode = Mode::Normal;
+                false
+            }
+        }
+    }
+
+    fn key_normal(&mut self, key: KeyEvent) -> bool {
+        let m = key.modifiers;
+        match key.code {
+            // ── Menu shortcuts ───────────────────────────────────────────────
+            KeyCode::F(10) => {
+                self.mode = Mode::Menu { menu: 0, item: 0 };
+            }
+            KeyCode::Char('f') | KeyCode::Char('F') if m == KeyModifiers::ALT => {
+                self.mode = Mode::Menu { menu: 0, item: 0 };
+            }
+            KeyCode::Char('e') | KeyCode::Char('E') if m == KeyModifiers::ALT => {
+                self.mode = Mode::Menu { menu: 1, item: 0 };
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') if m == KeyModifiers::ALT => {
+                self.mode = Mode::Menu { menu: 2, item: 0 };
+            }
+            KeyCode::Char('o') | KeyCode::Char('O') if m == KeyModifiers::ALT => {
+                self.mode = Mode::Menu { menu: 3, item: 0 };
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') if m == KeyModifiers::ALT => {
+                self.mode = Mode::Menu { menu: 4, item: 0 };
+            }
+
+            // ── File ─────────────────────────────────────────────────────────
+            KeyCode::Char('s') if m == KeyModifiers::CONTROL => self.do_save(),
+            KeyCode::F(2) => self.do_save(),
+
+            // ── Search ───────────────────────────────────────────────────────
+            KeyCode::Char('f') if m == KeyModifiers::CONTROL => {
+                self.mode = Mode::Find(self.last_find.clone());
+            }
+            KeyCode::F(3) => {
+                let q = self.last_find.clone();
+                if !q.is_empty() && !self.editor.find_next(&q) {
+                    self.message = Some(format!("'{}' not found", q));
+                }
+            }
+            KeyCode::Char('h') if m == KeyModifiers::CONTROL => {
+                self.mode = Mode::Replace {
+                    find: self.last_find.clone(),
+                    replace: String::new(),
+                    focus: 0,
+                };
+            }
+            KeyCode::Char('g') if m == KeyModifiers::CONTROL => {
+                self.mode = Mode::Goto(String::new());
+            }
+
+            // ── Edit ─────────────────────────────────────────────────────────
+            KeyCode::Char('x') if m == KeyModifiers::CONTROL => {
+                self.editor.cut_line();
+            }
+            KeyCode::Char('c') if m == KeyModifiers::CONTROL => {
+                self.editor.copy_line();
+            }
+            KeyCode::Char('v') if m == KeyModifiers::CONTROL => {
+                self.editor.paste();
+            }
+
+            // ── Navigation ───────────────────────────────────────────────────
+            KeyCode::Left => self.editor.cursor_left(),
+            KeyCode::Right => self.editor.cursor_right(),
+            KeyCode::Up => self.editor.cursor_up(),
+            KeyCode::Down => self.editor.cursor_down(),
+            KeyCode::Home if m == KeyModifiers::CONTROL => {
+                self.editor.cursor = (0, 0);
+            }
+            KeyCode::End if m == KeyModifiers::CONTROL => {
+                let last = self.editor.lines.len().saturating_sub(1);
+                let col = self.editor.lines[last].chars().count();
+                self.editor.cursor = (col, last);
+            }
+            KeyCode::Home => self.editor.home(),
+            KeyCode::End => self.editor.end(),
+            KeyCode::PageUp => self.editor.page_up(self.page_height),
+            KeyCode::PageDown => self.editor.page_down(self.page_height),
+
+            // ── Editing ──────────────────────────────────────────────────────
+            KeyCode::Insert => {
+                self.editor.overtype = !self.editor.overtype;
+            }
+            KeyCode::Delete => self.editor.delete(),
+            KeyCode::Backspace => self.editor.backspace(),
+            KeyCode::Enter => self.editor.insert_newline(),
+            KeyCode::Tab => {
+                for _ in 0..4 {
+                    self.editor.insert_char(' ');
+                }
+            }
+            KeyCode::Char(c) => {
+                self.message = None;
+                self.editor.insert_char(c);
+            }
+
+            _ => {}
+        }
+        false
+    }
+
+    fn key_menu(&mut self, key: KeyEvent, mi: usize, ii: usize) -> bool {
+        match key.code {
+            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Left => {
+                let nm = if mi == 0 { MENUS.len() - 1 } else { mi - 1 };
+                self.mode = Mode::Menu { menu: nm, item: 0 };
+            }
+            KeyCode::Right => {
+                self.mode = Mode::Menu {
+                    menu: (mi + 1) % MENUS.len(),
+                    item: 0,
+                };
+            }
+            KeyCode::Up => {
+                let items = MENU_ITEMS[mi];
+                let mut ni = if ii == 0 { items.len() - 1 } else { ii - 1 };
+                while items[ni].0.is_empty() {
+                    ni = if ni == 0 { items.len() - 1 } else { ni - 1 };
+                }
+                self.mode = Mode::Menu { menu: mi, item: ni };
+            }
+            KeyCode::Down => {
+                let items = MENU_ITEMS[mi];
+                let mut ni = (ii + 1) % items.len();
+                while items[ni].0.is_empty() {
+                    ni = (ni + 1) % items.len();
+                }
+                self.mode = Mode::Menu { menu: mi, item: ni };
+            }
+            KeyCode::Enter => return self.activate(mi, ii),
+            _ => {}
+        }
+        false
+    }
+
+    fn activate(&mut self, mi: usize, ii: usize) -> bool {
+        self.mode = Mode::Normal;
+        match (mi, ii) {
+            (0, 0) => self.do_new(),
+            (0, 1) => self.mode = Mode::Open(String::new()),
+            (0, 2) => self.do_save(),
+            (0, 3) => {
+                let n = self.editor.filename.clone().unwrap_or_default();
+                self.mode = Mode::SaveAs(n);
+            }
+            (0, 5) => {
+                if self.editor.dirty {
+                    self.mode = Mode::ConfirmExit;
+                    return false;
+                }
+                return true;
+            }
+            (1, 0) => self.editor.cut_line(),
+            (1, 1) => self.editor.copy_line(),
+            (1, 2) => self.editor.paste(),
+            (1, 3) => self.editor.delete(),
+            (2, 0) => self.mode = Mode::Find(self.last_find.clone()),
+            (2, 1) => {
+                let q = self.last_find.clone();
+                if !q.is_empty() && !self.editor.find_next(&q) {
+                    self.message = Some(format!("'{}' not found", q));
+                }
+            }
+            (2, 2) => {
+                self.mode = Mode::Replace {
+                    find: self.last_find.clone(),
+                    replace: String::new(),
+                    focus: 0,
+                }
+            }
+            (2, 4) => self.mode = Mode::Goto(String::new()),
+            (4, 3) => self.mode = Mode::About,
+            _ => {}
+        }
+        false
+    }
+
+    fn key_open(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Enter => {
+                if let Mode::Open(ref s) = self.mode.clone() {
+                    let path = s.clone();
+                    self.mode = Mode::Normal;
+                    if !path.is_empty() {
+                        if let Err(e) = self.editor.load_file(&path) {
+                            self.message = Some(format!("Error: {}", e));
+                        }
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Mode::Open(ref mut s) = self.mode {
+                    s.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Mode::Open(ref mut s) = self.mode {
+                    s.push(c);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn key_save_as(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Enter => {
+                if let Mode::SaveAs(ref s) = self.mode.clone() {
+                    let path = s.clone();
+                    self.mode = Mode::Normal;
+                    if !path.is_empty() {
+                        self.editor.filename = Some(path.clone());
+                        match self.editor.save_file(&path) {
+                            Ok(_) => {
+                                self.editor.dirty = false;
+                                self.message = Some(format!("Saved: {}", path));
+                            }
+                            Err(e) => self.message = Some(format!("Error: {}", e)),
+                        }
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Mode::SaveAs(ref mut s) = self.mode {
+                    s.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Mode::SaveAs(ref mut s) = self.mode {
+                    s.push(c);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn key_find(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Enter => {
+                if let Mode::Find(ref s) = self.mode.clone() {
+                    let q = s.clone();
+                    self.last_find = q.clone();
+                    self.mode = Mode::Normal;
+                    if !q.is_empty() && !self.editor.find_next(&q) {
+                        self.message = Some(format!("'{}' not found", q));
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Mode::Find(ref mut s) = self.mode {
+                    s.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Mode::Find(ref mut s) = self.mode {
+                    s.push(c);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn key_goto(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Enter => {
+                if let Mode::Goto(ref s) = self.mode.clone() {
+                    let line = s.parse::<usize>().unwrap_or(0);
+                    self.editor.goto_line(line);
+                    self.mode = Mode::Normal;
+                }
+            }
+            KeyCode::Backspace => {
+                if let Mode::Goto(ref mut s) = self.mode {
+                    s.pop();
+                }
+            }
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                if let Mode::Goto(ref mut s) = self.mode {
+                    s.push(c);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn key_replace(&mut self, key: KeyEvent, find: String, replace: String, focus: usize) -> bool {
+        match key.code {
+            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Tab => {
+                self.mode = Mode::Replace {
+                    find,
+                    replace,
+                    focus: 1 - focus,
+                };
+            }
+            KeyCode::Enter => {
+                self.last_find = find.clone();
+                let mut count = 0usize;
+                for line in &mut self.editor.lines {
+                    while let Some(pos) = line.find(&find) {
+                        line.replace_range(pos..pos + find.len(), &replace);
+                        count += 1;
+                        if find.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                self.editor.dirty = count > 0;
+                self.editor.highlight();
+                self.mode = Mode::Normal;
+                self.message = Some(format!("{} replacement(s) made", count));
+            }
+            KeyCode::Backspace => {
+                if focus == 0 {
+                    let mut f = find;
+                    f.pop();
+                    self.mode = Mode::Replace { find: f, replace, focus };
+                } else {
+                    let mut r = replace;
+                    r.pop();
+                    self.mode = Mode::Replace { find, replace: r, focus };
+                }
+            }
+            KeyCode::Char(c) => {
+                if focus == 0 {
+                    let mut f = find;
+                    f.push(c);
+                    self.mode = Mode::Replace { find: f, replace, focus };
+                } else {
+                    let mut r = replace;
+                    r.push(c);
+                    self.mode = Mode::Replace { find, replace: r, focus };
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn key_confirm_new(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.do_save();
+                self.new_confirmed();
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => self.new_confirmed(),
+            KeyCode::Esc | KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.mode = Mode::Normal;
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn key_confirm_exit(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => return true,
+            KeyCode::Char('n') | KeyCode::Char('N') => self.mode = Mode::Normal,
+            KeyCode::Esc | KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.mode = Mode::Normal;
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) {
+        if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
+            return;
+        }
+        let (mx, my) = (mouse.column, mouse.row);
+
+        if my == 0 {
+            // Click on menu bar
+            let mut x = 1u16;
+            for (i, name) in MENUS.iter().enumerate() {
+                let w = name.len() as u16 + 2;
+                if mx >= x && mx < x + w {
+                    self.mode = Mode::Menu { menu: i, item: 0 };
+                    return;
+                }
+                x += w;
+            }
+            return;
+        }
+
+        if let Mode::Normal = self.mode {
+            let ey = my as usize - 1 + self.editor.scroll.1 as usize;
+            let ex = mx as usize + self.editor.scroll.0 as usize;
+            if ey < self.editor.lines.len() {
+                let ll = self.editor.lines[ey].chars().count();
+                self.editor.cursor = (ex.min(ll), ey);
+            }
+        }
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    fn do_save(&mut self) {
+        match self.editor.filename.clone() {
+            Some(path) => match self.editor.save_file(&path) {
+                Ok(_) => {
+                    self.editor.dirty = false;
+                    self.message = Some(format!("Saved: {}", path));
+                }
+                Err(e) => self.message = Some(format!("Error saving: {}", e)),
+            },
+            None => self.mode = Mode::SaveAs(String::new()),
+        }
+    }
+
+    fn do_new(&mut self) {
+        if self.editor.dirty {
+            self.mode = Mode::ConfirmNew;
+        } else {
+            self.new_confirmed();
+        }
+    }
+
+    fn new_confirmed(&mut self) {
+        self.editor = Editor::new();
+        self.mode = Mode::Normal;
+        self.message = None;
+    }
+}
