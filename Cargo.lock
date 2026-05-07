@@ -158,16 +158,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "edit_rs"
-version = "0.1.0"
-dependencies = [
- "crossterm",
- "ratatui",
- "syntect",
- "unicode-width",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -417,6 +407,16 @@ dependencies = [
  "strum_macros",
  "unicode-segmentation",
  "unicode-truncate",
+ "unicode-width",
+]
+
+[[package]]
+name = "redit"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "syntect",
  "unicode-width",
 ]
 
