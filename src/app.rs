@@ -52,6 +52,7 @@ const MENU_ITEMS: &[&[(&str, &str)]] = &[
 #[derive(Debug, Clone, PartialEq)]
 enum Mode {
     Normal,
+    Welcome,
     Menu { menu: usize, item: usize },
     Open(String),
     SaveAs(String),
@@ -79,9 +80,11 @@ impl App {
         if args.len() > 1 {
             let _ = editor.load_file(&args[1]);
         }
+        // Show welcome credits only in V1 and only when no file is loaded
+        let initial_mode = if args.len() <= 1 { Mode::Welcome } else { Mode::Normal };
         Self {
             editor,
-            mode: Mode::Normal,
+            mode: initial_mode,
             last_find: String::new(),
             message: None,
             page_height: 20,
@@ -254,9 +257,10 @@ impl App {
             Rect::new(area.x, area.y, area.width, 1),
         );
 
-        // ── Content rows (no bottom border) ───────────────────────────────────
+        // ── Content rows ──────────────────────────────────────────────────────
         // Layout per row: │ (1) | text (w-2) | scrollbar (1)
-        let content_h = (area.height - 1) as usize;  // rows below title border
+        // Last row of area = horizontal scrollbar → content is area.height-2
+        let content_h = (area.height - 2) as usize;  // rows below title border
         let text_w    = w.saturating_sub(2);           // between │ and scrollbar
 
         let (cx, cy) = self.editor.cursor;
@@ -309,6 +313,38 @@ impl App {
 
             Self::render_text_row(f, text_area, &chars, sx, cx, on_this_line, base, cur_style);
         }
+
+        // ── Horizontal scrollbar (last row of edit area) ───────────────────
+        let hscroll_y = area.y + area.height - 1;
+        let track_w   = w.saturating_sub(4); // between ← and →, inside │…│
+        let h_thumb   = Self::hscrollbar_thumb(
+            sx,
+            text_w,
+            self.editor.lines.iter().map(|l| l.chars().count()).max().unwrap_or(0),
+            track_w,
+        );
+        let mut hbar: Vec<Span> = Vec::new();
+        hbar.push(Span::styled("│←", scroll_style));
+        for i in 0..track_w {
+            let ch = if i >= h_thumb.0 && i < h_thumb.0 + h_thumb.1 { "█" } else { "░" };
+            hbar.push(Span::styled(ch, scroll_style));
+        }
+        hbar.push(Span::styled("→│", scroll_style));
+        f.render_widget(
+            Paragraph::new(Line::from(hbar)),
+            Rect::new(area.x, hscroll_y, area.width, 1),
+        );
+    }
+
+    /// Returns (thumb_start, thumb_size) for the horizontal scrollbar.
+    fn hscrollbar_thumb(scroll_x: usize, view_w: usize, max_line_w: usize, track_w: usize) -> (usize, usize) {
+        if max_line_w <= view_w || track_w == 0 {
+            return (0, 0); // no thumb (all content visible)
+        }
+        let thumb_size = (track_w * view_w / max_line_w).max(1).min(track_w);
+        let max_scroll = max_line_w - view_w;
+        let thumb_pos  = (track_w - thumb_size) * scroll_x / max_scroll;
+        (thumb_pos, thumb_size)
     }
 
     /// V2 — simplified look: full box border (top + bottom), no title, no scrollbar.
@@ -437,29 +473,19 @@ impl App {
     /// Scrollbar character for V1.
     /// `row` is 0-indexed within the content block (0 = top, content_h-1 = bottom).
     fn scrollbar_char(row: usize, content_h: usize, total_doc: usize, scroll_y: usize) -> &'static str {
-        if row == 0 {
-            return "↑";
-        }
-        if row == content_h - 1 {
-            return "↓";
-        }
-        if content_h <= 2 {
-            return "█";
-        }
-        let body = content_h - 2; // rows between ↑ and ↓
+        if row == 0 { return "↑"; }
+        if row == content_h - 1 { return "↓"; }
+        if content_h <= 2 { return "░"; }
+        let body = content_h - 2;
         if total_doc <= content_h {
-            return "█"; // whole document visible
+            return "░"; // whole document visible — no thumb, just background
         }
         let thumb_size = (body * content_h / total_doc).max(1).min(body);
         let max_offset = body - thumb_size;
         let max_scroll = total_doc - content_h;
-        let thumb_pos  = max_offset * scroll_y / max_scroll;
-        let body_row   = row - 1; // 0-indexed within the body
-        if body_row >= thumb_pos && body_row < thumb_pos + thumb_size {
-            "█"
-        } else {
-            "░"
-        }
+        let thumb_pos  = if max_scroll == 0 { 0 } else { max_offset * scroll_y / max_scroll };
+        let body_row   = row - 1;
+        if body_row >= thumb_pos && body_row < thumb_pos + thumb_size { "█" } else { "░" }
     }
 
     // ── Status bar ────────────────────────────────────────────────────────────
@@ -474,7 +500,9 @@ impl App {
 
         let right = format!("{}  Ln:{:>4}  Col:{:>3}  {}", dirty, cy + 1, cx + 1, ovr);
 
-        let left = if let Some(m) = &self.message {
+        let left = if self.mode == Mode::Welcome {
+            format!(" F1=Help   Enter=Execute   Esc=Cancel")
+        } else if let Some(m) = &self.message {
             format!(" {}", m)
         } else if self.theme.version == Version::V1 {
             format!(" F1=Help")
@@ -511,6 +539,7 @@ impl App {
 
     fn render_dialog(&self, f: &mut Frame, mode: &Mode) {
         match mode {
+            Mode::Welcome     => self.welcome_dialog(f),
             Mode::Open(s)    => self.input_dialog(f, "Open",        "File Name:",    s),
             Mode::SaveAs(s)  => self.input_dialog(f, "Save As",     "File Name:",    s),
             Mode::Find(s)    => self.input_dialog(f, "Find",        "Find What:",    s),
@@ -531,6 +560,89 @@ impl App {
             w.min(s.width),
             h.min(s.height),
         )
+    }
+
+    fn welcome_dialog(&self, f: &mut Frame) {
+        let t    = &self.theme;
+        let area = Self::center_rect(f, 62, 11);
+        f.render_widget(Clear, area);
+
+        let dlg_style  = Style::default().bg(t.dlg_bg).fg(t.dlg_fg);
+        let line_style = Style::default().bg(t.frame_bg).fg(t.frame_fg);
+
+        // Top border
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("┌{}┐", "─".repeat(area.width as usize - 2)),
+                line_style,
+            )),
+            Rect::new(area.x, area.y, area.width, 1),
+        );
+
+        let iw = area.width as usize - 2;
+        let rows: &[&str] = &[
+            "",
+            "         Welcome to the redit Editor",
+            "",
+            "  Copyright (c) 2026 Francesco Bianco. All rights reserved.",
+            "  Faithful MS-DOS EDIT clone written in Rust.",
+            "",
+            "       < Press Enter to see keyboard shortcuts >",
+            "",
+        ];
+        for (i, &row) in rows.iter().enumerate() {
+            let y = area.y + 1 + i as u16;
+            f.render_widget(
+                Paragraph::new(Span::styled("│", line_style)),
+                Rect::new(area.x, y, 1, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    format!("{:<w$}", row, w = iw),
+                    dlg_style,
+                )),
+                Rect::new(area.x + 1, y, iw as u16, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled("│", line_style)),
+                Rect::new(area.x + area.width - 1, y, 1, 1),
+            );
+        }
+
+        // Separator ├──┤
+        let sep_y = area.y + 1 + rows.len() as u16;
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("├{}┤", "─".repeat(iw)),
+                line_style,
+            )),
+            Rect::new(area.x, sep_y, area.width, 1),
+        );
+
+        // ESC row
+        let esc_y = sep_y + 1;
+        let esc_text = format!("{:^w$}", "< Press ESC to clear this dialog box >", w = iw);
+        f.render_widget(
+            Paragraph::new(Span::styled("│", line_style)),
+            Rect::new(area.x, esc_y, 1, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled(esc_text, dlg_style)),
+            Rect::new(area.x + 1, esc_y, iw as u16, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled("│", line_style)),
+            Rect::new(area.x + area.width - 1, esc_y, 1, 1),
+        );
+
+        // Bottom border
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("└{}┘", "─".repeat(iw)),
+                line_style,
+            )),
+            Rect::new(area.x, esc_y + 1, area.width, 1),
+        );
     }
 
     fn input_dialog(&self, f: &mut Frame, title: &str, label: &str, input: &str) {
@@ -670,7 +782,8 @@ impl App {
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
         match self.mode.clone() {
-            Mode::Normal => self.key_normal(key),
+            Mode::Normal  => self.key_normal(key),
+            Mode::Welcome => { self.mode = Mode::Normal; false }
             Mode::Menu { menu, item } => self.key_menu(key, menu, item),
             Mode::Open(_)   => self.key_open(key),
             Mode::SaveAs(_) => self.key_save_as(key),
@@ -688,15 +801,15 @@ impl App {
         match key.code {
             // Menu bar
             KeyCode::F(10) => { self.mode = Mode::Menu { menu: 0, item: 0 }; }
-            KeyCode::Char('f') | KeyCode::Char('F') if m == KeyModifiers::ALT =>
+            KeyCode::Char('f') | KeyCode::Char('F') if m.contains(KeyModifiers::ALT) =>
                 { self.mode = Mode::Menu { menu: 0, item: 0 }; }
-            KeyCode::Char('e') | KeyCode::Char('E') if m == KeyModifiers::ALT =>
+            KeyCode::Char('e') | KeyCode::Char('E') if m.contains(KeyModifiers::ALT) =>
                 { self.mode = Mode::Menu { menu: 1, item: 0 }; }
-            KeyCode::Char('s') | KeyCode::Char('S') if m == KeyModifiers::ALT =>
+            KeyCode::Char('s') | KeyCode::Char('S') if m.contains(KeyModifiers::ALT) =>
                 { self.mode = Mode::Menu { menu: 2, item: 0 }; }
-            KeyCode::Char('o') | KeyCode::Char('O') if m == KeyModifiers::ALT =>
+            KeyCode::Char('o') | KeyCode::Char('O') if m.contains(KeyModifiers::ALT) =>
                 { self.mode = Mode::Menu { menu: 3, item: 0 }; }
-            KeyCode::Char('h') | KeyCode::Char('H') if m == KeyModifiers::ALT =>
+            KeyCode::Char('h') | KeyCode::Char('H') if m.contains(KeyModifiers::ALT) =>
                 { self.mode = Mode::Menu { menu: 4, item: 0 }; }
 
             // File
