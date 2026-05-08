@@ -51,19 +51,23 @@ diff-screens:
 
 # ── Gherkin test suite ────────────────────────────────────────────────────────
 
-# Run all features against the clone, assert behavioral steps
+# Run all features against clone-v1 (faithful, default)
 test:
-	@EDITOR_TARGET=clone bash tests/run.sh tests/features/*.feature
+	@EDITOR_TARGET=clone EDITOR_VERSION=v1 bash tests/run.sh tests/features/*.feature
+
+# Run all features against clone-v2 (redit-specific UI)
+test-v2:
+	@EDITOR_TARGET=clone EDITOR_VERSION=v2 bash tests/run.sh tests/features/*.feature
 
 # Run a single feature  (usage: make test-feature FEATURE=04_file_menu)
 test-feature:
-	@EDITOR_TARGET=clone bash tests/run.sh tests/features/$(FEATURE).feature
+	@EDITOR_TARGET=clone EDITOR_VERSION=v1 bash tests/run.sh tests/features/$(FEATURE).feature
 
 # Run all features against the original MS-DOS EDIT
 test-original:
-	@EDITOR_TARGET=original bash tests/run.sh tests/features/*.feature
+	@EDITOR_TARGET=original EDITOR_VERSION=v1 bash tests/run.sh tests/features/*.feature
 
-# Run both and diff captures: the full conformance check
+# Run both (original-v1 and clone-v1) and diff captures: faithful conformance check
 compare:
 	@bash tests/compare.sh tests/features/*.feature
 

@@ -1,0 +1,25 @@
+   File  Edit  Search  Options                                            Help
+┌─────────────────────────── HELP: Survival Guide ─────────────────────────────┐
+│                                                                              ↑
+│ Using the MS-DOS ┌─────────────── Save As ────────────────┐                  ░
+│                  │            ┌─────────────────────────┐ │                  ░
+│   ■ To activate t│ File Name: │                         │ │                  ░
+│   ■ To activate m│            └─────────────────────────┘ │etter.            ░
+│   ■ To move betwe│ G:\                                    │eys.              ░
+│   ■ To get help o│              Dirs/Drives               │ press F1.        ░
+│   ■ To exit Help,│            ┌──────────────┐            │                  ░
+│                  │            │ [-A-]        ↑            │                  ░
+│ Browsing the MS-D│            │ [-B-]                     │                  ░
+│                  │            │ [-C-]        ░            │                  ░
+│   ■ To select one│            │ [-D-]        ░            │y or the first    ░
+│     letter of the│            │ [-E-]        ░            │formation on:     ░
+│                  │            │ [-F-]        ░            │
+│     ◄Getting Star│            │ [-G-]        ↓            │and the           ░
+│                  │            └──────────────┘            │                  ░
+│     ◄Keyboard►   ├────────────────────────────────────────┤OS Editor Help    ░
+│                  │      < OK >    < Cancel >    < Help >  │                  ░
+│ Tip: These topics└────────────────────────────────────────┘                  ░
+│                                                                              ↓
+├───────────────────────────────── Untitled ───────────────────────────────────┤
+│                                                                              │
+ F1=Help   Enter=Execute   Esc=Cancel   Tab=Next Field   Arrow=Next Item

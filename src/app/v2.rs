@@ -82,15 +82,16 @@ impl App {
             }
 
             let on_this_line = line_idx == cy;
+            let sel = self.line_selection(line_idx);
             if !self.faithful && line_idx < self.editor.highlighted.len() {
                 let hl = self.editor.highlighted[line_idx].clone();
                 Self::render_highlighted_row(
                     f, text_area, &hl, sx, cx, on_this_line,
-                    t.edit_bg, cur_style, 8,
+                    t.edit_bg, cur_style, 8, sel,
                 );
             } else {
                 let chars: Vec<char> = self.editor.lines[line_idx].chars().collect();
-                Self::render_text_row(f, text_area, &chars, sx, cx, on_this_line, base, cur_style);
+                Self::render_text_row(f, text_area, &chars, sx, cx, on_this_line, base, cur_style, sel);
             }
         }
     }

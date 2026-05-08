@@ -8,3 +8,5 @@ crossterm = "0.28"
 ratatui = "0.28"
 syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }
 unicode-width = "0.1"
+portable-pty = "0.8"
+vt100 = "0.15"

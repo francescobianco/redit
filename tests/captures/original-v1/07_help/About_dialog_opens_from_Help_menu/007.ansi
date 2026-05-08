@@ -1,0 +1,25 @@
+[30m[47m   File  Edit  Search  Options                                            Help
+[37m[40m┌───────────────────────────[30m[47m HELP: Survival Guide [37m[40m─────────────────────────────┐
+│                                                                              [30m[47m↑
+[37m[40m│ [97mUsing the MS-DOS Editor:[37m                                                     [30m[47m░
+[37m[40m│                                                                              [30m[47m░
+[37m[40m│   ■ To activate the MS-DOS Editor menu bar, press Alt.                       [30m[47m░
+[37m[40m│   ■ To activate menus and commands, press the highlighted letter.            [30m[47m░
+[37m[40m│   ■ To move between menus and commands, use the direction keys.              [30m[47m░
+[37m[40m│   ■ To get help on a selected menu, command, or dialog box, press F1.        [30m[47m░
+[37m[40m│   ■ To exit Help, press Esc.                                                 [30m[47m░
+[37m[40m│                                                                              [30m[47m░
+[37m[40m│ [97mBrowsing the MS-DOS Editor Help system:[37m                                      [30m[47m░
+[37m[40m│                                                                              [30m[47m░
+[37m[40m│   ■ To select one of the following topics, press the Tab key or the first    [30m[47m░
+[37m[40m│     letter of the topic. Then press the Enter key to see information on:     [30m[47m░
+[37m[40m│
+│     [92m◄[37mGetting Started[92m►[37m  Loading and using the MS-DOS Editor and the           [30m[47m░
+[37m[40m│                        MS-DOS Editor Help system                             [30m[47m░
+[37m[40m│     [92m◄[37mKeyboard[92m►[37m         Editing and navigating text and MS-DOS Editor Help    [30m[47m░
+[37m[40m│                                                                              [30m[47m░
+[37m[40m│ Tip: These topics are also available from the Help menu.                     [30m[47m░
+[37m[40m│                                                                              [30m[47m↓
+[97m[44m├───────────────────────────────── Untitled ───────────────────────────────────┤
+│                                                                              │
+[46m <F1=Help> <F6=Window> <Esc=Cancel> <Ctrl+F1=Next> <Alt+F1=Back>

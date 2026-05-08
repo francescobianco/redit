@@ -1,0 +1,25 @@
+   File  Edit  Search  Options                                            Help
+┌─────────────────────────────── HELP: Keyboard ───────────────────────────────┐
+│ This section is designed to help you navigate and edit your text while       ↑
+│ using the MS-DOS Editor.
+│                                                                              ░
+│ Choose a topic below to see information on:                                  ░
+│                                                                              ░
+│     Shortcut Keys           Text-Selection Keys                              ░
+│     Help Keys               Insert and Copy Keys                             ░
+│     Cursor-Movement Keys    Delete Keys                                      ░
+│     Text-Scrolling Keys     Find and Change Keys                             ░
+│                                                                              ░
+│ The MS-DOS Editor recognizes keystroke combinations familiar to users of     ░
+│ other Microsoft programs (such as Microsoft Word) as well as WordStar key    ░
+│ combinations. WordStar keystrokes that can be used in the MS-DOS Editor are  ░
+│ listed in the right column of the three-column keystroke tables.             ░
+│                                                                              ░
+│ Key                   Action                                                 ░
+│ ────────────────────────────────────────────────────────────                 ░
+│ Home                  Move to start of current line                          ░
+│ End                   Move to end of current line                            ░
+│ Ctrl+Home             Move to start of document                              ↓
+└──────────────────────────────────────────────────────────────────────────────┘
+│← ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░→│
+ <F1=Help> <F6=Window> <Esc=Cancel> <Ctrl+F1=Next> <Alt+F1=Back>

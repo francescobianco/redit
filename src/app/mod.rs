@@ -16,6 +16,7 @@ use crate::editor::Editor;
 use crate::settings::UserSettings;
 use crate::theme::{Theme, Version};
 
+mod term;
 mod v1;
 mod v2;
 
@@ -210,6 +211,8 @@ pub struct App {
     pub faithful: bool,
     // F12 toggles keyboard debug mode; stores the last key description
     pub(super) kbd_debug: Option<String>,
+    // Embedded terminal pane (Ctrl+T, disabled in --faithful mode)
+    pub(super) term_pane: Option<term::TermPane>,
 }
 
 impl App {
@@ -247,11 +250,17 @@ impl App {
             theme,
             faithful,
             kbd_debug: None,
+            term_pane: None,
         }
     }
 
     pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         loop {
+            // Drain PTY output before drawing
+            if let Some(tp) = &mut self.term_pane {
+                tp.drain();
+            }
+
             terminal.draw(|f| self.render(f))?;
 
             if !event::poll(std::time::Duration::from_millis(50))? {
@@ -260,13 +269,30 @@ impl App {
 
             match event::read()? {
                 Event::Key(k) => {
+                    // When terminal pane is focused, forward all input to the PTY
+                    // except Ctrl+T which toggles focus back to the editor
+                    if self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false) {
+                        if k.code == KeyCode::Char('t') && k.modifiers == KeyModifiers::CONTROL {
+                            if let Some(tp) = &mut self.term_pane {
+                                tp.focused = false;
+                            }
+                        } else {
+                            self.forward_key_to_term(k);
+                        }
+                        continue;
+                    }
+
                     if self.handle_key(k) {
                         break;
                     }
                 }
                 Event::Mouse(m) => self.handle_mouse(m),
-                Event::Resize(_, h) => {
+                Event::Resize(w, h) => {
                     self.page_height = h.saturating_sub(4) as usize;
+                    // Resize terminal pane to new width
+                    if let Some(tp) = &mut self.term_pane {
+                        tp.resize(w, tp.height);
+                    }
                 }
                 _ => {}
             }
@@ -274,17 +300,63 @@ impl App {
         Ok(())
     }
 
+    fn forward_key_to_term(&mut self, key: KeyEvent) {
+        let Some(tp) = &mut self.term_pane else { return };
+        let bytes: Vec<u8> = match key.code {
+            KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let byte = (c as u8).to_ascii_lowercase();
+                if byte >= b'a' && byte <= b'z' {
+                    vec![byte - b'a' + 1]
+                } else {
+                    c.to_string().into_bytes()
+                }
+            }
+            KeyCode::Char(c) => c.to_string().into_bytes(),
+            KeyCode::Enter => vec![b'\r'],
+            KeyCode::Backspace => vec![0x7f],
+            KeyCode::Tab => vec![b'\t'],
+            KeyCode::Esc => vec![0x1b],
+            KeyCode::Up => b"\x1b[A".to_vec(),
+            KeyCode::Down => b"\x1b[B".to_vec(),
+            KeyCode::Right => b"\x1b[C".to_vec(),
+            KeyCode::Left => b"\x1b[D".to_vec(),
+            KeyCode::Home => b"\x1b[H".to_vec(),
+            KeyCode::End => b"\x1b[F".to_vec(),
+            KeyCode::Delete => b"\x1b[3~".to_vec(),
+            KeyCode::F(n) => format!("\x1b[{}~", 10 + n).into_bytes(),
+            _ => return,
+        };
+        tp.write_input(&bytes);
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
 
     fn render(&mut self, f: &mut Frame) {
         let size = f.area();
         let menu_area = Rect::new(0, 0, size.width, 1);
-        let edit_area = Rect::new(0, 1, size.width, size.height.saturating_sub(2));
         let stat_area = Rect::new(0, size.height.saturating_sub(1), size.width, 1);
+
+        // Reserve rows at the bottom for the terminal pane (separator + content)
+        let term_h = self.term_pane.as_ref().map(|tp| tp.height + 1).unwrap_or(0);
+        let edit_h = size.height.saturating_sub(2).saturating_sub(term_h);
+        let edit_area = Rect::new(0, 1, size.width, edit_h);
 
         self.render_editor(f, edit_area);
         self.render_menu_bar(f, menu_area);
         self.render_status_bar(f, stat_area);
+
+        // Render terminal pane if open
+        if self.term_pane.is_some() {
+            let term_area = Rect::new(
+                0,
+                1 + edit_h,
+                size.width,
+                term_h,
+            );
+            // Borrow separately to satisfy the borrow checker
+            let tp = self.term_pane.as_mut().unwrap();
+            tp.render(f, term_area);
+        }
 
         if let Mode::Menu { menu, item } = &self.mode {
             let (m, i) = (*menu, *item);
@@ -477,57 +549,6 @@ impl App {
         }
     }
 
-    /// Builds a screen-ready string of exactly `vw` display columns from `chars`
-    /// starting at char index `sx`, with tab expansion.  Returns (string, cursor_col)
-    /// where cursor_col is the display column of `cx` within the returned string
-    /// (or None when cx is not in the visible range).
-    fn chars_to_display(
-        chars: &[char],
-        sx: usize,
-        cx: usize,
-        vw: usize,
-        tab_stop: usize,
-        cursor_here: bool,
-    ) -> (String, Option<usize>, usize) {
-        // First: compute column of sx in the raw line so tab positions are correct.
-        let mut raw_col = 0usize;
-        for &c in chars.iter().take(sx) {
-            raw_col += Self::char_display_width(c, raw_col, tab_stop);
-        }
-
-        let mut out = String::new();
-        let mut used_cols = 0usize;
-        let mut cursor_col: Option<usize> = None;
-
-        for (i, &c) in chars.iter().enumerate().skip(sx) {
-            let w = Self::char_display_width(c, raw_col, tab_stop);
-            if used_cols + w > vw {
-                break;
-            }
-            if cursor_here && i == cx {
-                cursor_col = Some(used_cols);
-            }
-            if c == '\t' {
-                out.push_str(&" ".repeat(w));
-            } else {
-                out.push(c);
-            }
-            used_cols += w;
-            raw_col += w;
-        }
-        // If cursor is past the end of content (empty line or cx == len)
-        if cursor_here && cursor_col.is_none() && cx >= chars.len() && used_cols < vw {
-            cursor_col = Some(used_cols);
-            out.push(' ');
-            used_cols += 1;
-        }
-        // Pad remainder
-        if used_cols < vw {
-            out.push_str(&" ".repeat(vw - used_cols));
-        }
-        (out, cursor_col, used_cols)
-    }
-
     pub(super) fn render_text_row(
         f: &mut Frame,
         area: Rect,
@@ -537,69 +558,71 @@ impl App {
         cursor_here: bool,
         base: Style,
         cur_style: Style,
+        sel: Option<(usize, usize)>, // (sel_start, sel_end) in char-index doc coords
     ) {
         let vw = area.width as usize;
-        let tab_stop = 8; // TODO: wire up settings.tab_stops
+        let tab_stop = 8;
 
-        let (display, cursor_col, _) =
-            Self::chars_to_display(chars, sx, cx, vw, tab_stop, cursor_here);
+        // Compute raw_col for correct tab-stop positions starting at sx
+        let mut raw_col = 0usize;
+        for &c in chars.iter().take(sx) {
+            raw_col += Self::char_display_width(c, raw_col, tab_stop);
+        }
 
-        let Some(cc) = cursor_col else {
-            // No cursor on this row — render as a single styled span
-            f.render_widget(
-                Paragraph::new(Span::styled(display, base)),
-                area,
-            );
-            return;
+        // Build spans char by char, merging consecutive same-style runs
+        let mut out: Vec<(String, Style)> = Vec::new();
+        let mut screen_col = 0usize;
+        let mut cursor_rendered = false;
+
+        let style_at = |i: usize| -> Style {
+            if cursor_here && i == cx {
+                cur_style
+            } else if sel.map(|(s, e)| i >= s && i < e).unwrap_or(false) {
+                cur_style
+            } else {
+                base
+            }
         };
 
-        // Split display string at the cursor column
-        // display is already exactly vw display cols wide
-        let bytes_before = display
-            .char_indices()
-            .scan(0usize, |col, (byte_i, c)| {
-                if *col < cc {
-                    *col += UnicodeWidthChar::width(c).unwrap_or(1);
-                    Some(byte_i)
-                } else {
-                    None
-                }
-            })
-            .last()
-            .map(|bi| {
-                // advance past last char
-                let c = display[bi..].chars().next().unwrap();
-                bi + c.len_utf8()
-            })
-            .unwrap_or(0);
-
-        let before = &display[..bytes_before];
-        // cursor char: may be a multi-byte char; take chars until width >= 1
-        let mut cur_end = bytes_before;
-        let mut cur_w = 0usize;
-        for c in display[bytes_before..].chars() {
-            cur_end += c.len_utf8();
-            cur_w += UnicodeWidthChar::width(c).unwrap_or(1);
-            if cur_w >= 1 {
+        for (i, &c) in chars.iter().enumerate().skip(sx) {
+            let w = Self::char_display_width(c, raw_col, tab_stop);
+            if screen_col + w > vw {
                 break;
             }
-        }
-        let cursor_ch = &display[bytes_before..cur_end];
-        let after = &display[cur_end..];
-
-        let mut spans = Vec::with_capacity(3);
-        if !before.is_empty() {
-            spans.push(Span::styled(before.to_string(), base));
-        }
-        spans.push(Span::styled(
-            if cursor_ch.is_empty() { " ".to_string() } else { cursor_ch.to_string() },
-            cur_style,
-        ));
-        if !after.is_empty() {
-            spans.push(Span::styled(after.to_string(), base));
+            if cursor_here && i == cx {
+                cursor_rendered = true;
+            }
+            let text = if c == '\t' { " ".repeat(w) } else { c.to_string() };
+            let sty = style_at(i);
+            match out.last_mut() {
+                Some(last) if last.1 == sty => last.0.push_str(&text),
+                _ => out.push((text, sty)),
+            }
+            screen_col += w;
+            raw_col += w;
         }
 
-        f.render_widget(Paragraph::new(Line::from(spans)), area);
+        // Cursor past end of content
+        if cursor_here && !cursor_rendered && screen_col < vw {
+            out.push((" ".to_string(), cur_style));
+            screen_col += 1;
+        }
+
+        // Pad remainder with base style
+        if screen_col < vw {
+            let pad = " ".repeat(vw - screen_col);
+            match out.last_mut() {
+                Some(last) if last.1 == base => last.0.push_str(&pad),
+                _ => out.push((pad, base)),
+            }
+        }
+
+        if out.is_empty() {
+            f.render_widget(Paragraph::new(Span::styled(" ".repeat(vw), base)), area);
+        } else {
+            let spans: Vec<Span> = out.into_iter().map(|(s, st)| Span::styled(s, st)).collect();
+            f.render_widget(Paragraph::new(Line::from(spans)), area);
+        }
     }
 
     /// Like `render_text_row` but uses per-character colors from syntect highlighting.
@@ -614,6 +637,7 @@ impl App {
         edit_bg: Color,
         cur_style: Style,
         tab_stop: usize,
+        sel: Option<(usize, usize)>, // (sel_start, sel_end) in char-index doc coords
     ) {
         let vw = area.width as usize;
 
@@ -640,7 +664,8 @@ impl App {
             if screen_col + w > vw {
                 break;
             }
-            let eff = if cursor_here && i == cx { cur_style } else { style };
+            let is_sel = sel.map(|(s, e)| i >= s && i < e).unwrap_or(false);
+            let eff = if cursor_here && i == cx || is_sel { cur_style } else { style };
             if c == '\t' {
                 out.push(Span::styled(" ".repeat(w), eff));
             } else {
@@ -665,6 +690,24 @@ impl App {
         }
 
         f.render_widget(Paragraph::new(Line::from(out)), area);
+    }
+
+    // Returns the selected char-index range for a given line, if any.
+    pub(super) fn line_selection(&self, line_idx: usize) -> Option<(usize, usize)> {
+        if !self.editor.has_selection() {
+            return None;
+        }
+        let ((sx, sy), (ex, ey)) = self.editor.selection_range()?;
+        if line_idx < sy || line_idx > ey {
+            return None;
+        }
+        let start = if line_idx == sy { sx } else { 0 };
+        let end = if line_idx == ey {
+            ex
+        } else {
+            self.editor.lines[line_idx].chars().count()
+        };
+        if start >= end { None } else { Some((start, end)) }
     }
 
     // ── Status bar ────────────────────────────────────────────────────────────
@@ -1904,10 +1947,29 @@ impl App {
                 self.mode = Mode::HelpGettingStarted { scroll: 0 };
             }
 
+            // Ctrl+T — toggle embedded terminal (disabled in --faithful mode)
+            KeyCode::Char('t') if m == KeyModifiers::CONTROL && !self.faithful => {
+                if self.term_pane.is_some() {
+                    // If already open: toggle focus (open→focused→closed cycle)
+                    let focused = self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false);
+                    if focused {
+                        self.term_pane = None; // close
+                    } else {
+                        self.term_pane.as_mut().unwrap().focused = true;
+                    }
+                } else {
+                    // Open a new terminal pane
+                    let w = 80u16; // will be corrected on next Resize
+                    let h = 10u16;
+                    self.term_pane = term::TermPane::spawn(w, h);
+                }
+            }
+
             KeyCode::Char('s') if m == KeyModifiers::CONTROL => self.do_save(),
             KeyCode::F(2) => self.do_save(),
 
             KeyCode::Char('x') if m == KeyModifiers::CONTROL => {
+                self.editor.clear_selection();
                 if self.editor.dirty {
                     self.mode = Mode::ConfirmExit;
                 } else {
@@ -1935,19 +1997,19 @@ impl App {
                 self.mode = Mode::Goto(String::new());
             }
 
-            KeyCode::Char('x') if m == KeyModifiers::CONTROL => {
-                self.editor.cut_line();
-            }
-            // Ctrl+K — nano-style kill line (disabled in --faithful mode)
+            // Ctrl+K — nano-style kill line / cut selection (disabled in --faithful mode)
             KeyCode::Char('k') if m == KeyModifiers::CONTROL && !self.faithful => {
                 self.editor.cut_line();
             }
-            KeyCode::Char('c') if m == KeyModifiers::CONTROL => {
+            // Ctrl+C / Ctrl+V — modern copy/paste aliases (disabled in --faithful mode)
+            KeyCode::Char('c') if m == KeyModifiers::CONTROL && !self.faithful => {
                 self.editor.copy_line();
             }
-            KeyCode::Char('v') if m == KeyModifiers::CONTROL => {
+            KeyCode::Char('v') if m == KeyModifiers::CONTROL && !self.faithful => {
+                self.editor.delete_selection();
                 self.editor.paste();
             }
+            // DOS keyboard shortcuts (always active): Shift+Del / Ctrl+Ins / Shift+Ins
             KeyCode::Delete if m == KeyModifiers::SHIFT => {
                 self.editor.cut_line();
             }
@@ -1955,39 +2017,94 @@ impl App {
                 self.editor.copy_line();
             }
             KeyCode::Insert if m == KeyModifiers::SHIFT => {
+                self.editor.delete_selection();
                 self.editor.paste();
             }
 
-            KeyCode::Left => self.editor.cursor_left(),
-            KeyCode::Right => self.editor.cursor_right(),
-            KeyCode::Up => self.editor.cursor_up(),
-            KeyCode::Down => self.editor.cursor_down(),
+            // ── Shift+movement → extend selection ──────────────────────────────
+            KeyCode::Left if m == KeyModifiers::SHIFT => {
+                if self.editor.selection_anchor.is_none() {
+                    self.editor.selection_anchor = Some(self.editor.cursor);
+                }
+                self.editor.cursor_left();
+            }
+            KeyCode::Right if m == KeyModifiers::SHIFT => {
+                if self.editor.selection_anchor.is_none() {
+                    self.editor.selection_anchor = Some(self.editor.cursor);
+                }
+                self.editor.cursor_right();
+            }
+            KeyCode::Up if m == KeyModifiers::SHIFT => {
+                if self.editor.selection_anchor.is_none() {
+                    self.editor.selection_anchor = Some(self.editor.cursor);
+                }
+                self.editor.cursor_up();
+            }
+            KeyCode::Down if m == KeyModifiers::SHIFT => {
+                if self.editor.selection_anchor.is_none() {
+                    self.editor.selection_anchor = Some(self.editor.cursor);
+                }
+                self.editor.cursor_down();
+            }
+            KeyCode::Home if m == KeyModifiers::SHIFT => {
+                if self.editor.selection_anchor.is_none() {
+                    self.editor.selection_anchor = Some(self.editor.cursor);
+                }
+                self.editor.home();
+            }
+            KeyCode::End if m == KeyModifiers::SHIFT => {
+                if self.editor.selection_anchor.is_none() {
+                    self.editor.selection_anchor = Some(self.editor.cursor);
+                }
+                self.editor.end();
+            }
+
+            // ── Bare movement → clear selection ────────────────────────────────
+            KeyCode::Left => { self.editor.clear_selection(); self.editor.cursor_left(); }
+            KeyCode::Right => { self.editor.clear_selection(); self.editor.cursor_right(); }
+            KeyCode::Up => { self.editor.clear_selection(); self.editor.cursor_up(); }
+            KeyCode::Down => { self.editor.clear_selection(); self.editor.cursor_down(); }
             KeyCode::Home if m == KeyModifiers::CONTROL => {
+                self.editor.clear_selection();
                 self.editor.cursor = (0, 0);
             }
             KeyCode::End if m == KeyModifiers::CONTROL => {
+                self.editor.clear_selection();
                 let last = self.editor.lines.len().saturating_sub(1);
                 let col = self.editor.lines[last].chars().count();
                 self.editor.cursor = (col, last);
             }
-            KeyCode::Home => self.editor.home(),
-            KeyCode::End => self.editor.end(),
-            KeyCode::PageUp => self.editor.page_up(self.page_height),
-            KeyCode::PageDown => self.editor.page_down(self.page_height),
+            KeyCode::Home => { self.editor.clear_selection(); self.editor.home(); }
+            KeyCode::End => { self.editor.clear_selection(); self.editor.end(); }
+            KeyCode::PageUp => { self.editor.clear_selection(); self.editor.page_up(self.page_height); }
+            KeyCode::PageDown => { self.editor.clear_selection(); self.editor.page_down(self.page_height); }
 
             KeyCode::Insert => {
                 self.editor.overtype = !self.editor.overtype;
             }
-            KeyCode::Delete => self.editor.delete(),
-            KeyCode::Backspace => self.editor.backspace(),
-            KeyCode::Enter => self.editor.insert_newline(),
+            KeyCode::Delete => {
+                if !self.editor.delete_selection() {
+                    self.editor.delete();
+                }
+            }
+            KeyCode::Backspace => {
+                if !self.editor.delete_selection() {
+                    self.editor.backspace();
+                }
+            }
+            KeyCode::Enter => {
+                self.editor.delete_selection();
+                self.editor.insert_newline();
+            }
             KeyCode::Tab => {
+                self.editor.delete_selection();
                 for _ in 0..4 {
                     self.editor.insert_char(' ');
                 }
             }
             KeyCode::Char(c) => {
                 self.message = None;
+                self.editor.delete_selection();
                 self.editor.insert_char(c);
             }
 

@@ -1,0 +1,25 @@
+   File  Edit  Search  Options                                            Help
+┌─────────────────────────── HELP: Getting Started ────────────────────────────┐
+│  ◄Getting Started►  ◄Keyboard►  ◄Back►                                       ↑
+│──────────────────────────────────────────────────────────────────────────────
+│ This section helps you start and use the MS-DOS Editor.                      ░
+│ Choose one of the following topics to see information on:                    ░
+│                                                                              ░
+│   ◄Using Help►                                                               ░
+│   ◄Using Menus and Commands►                                                 ░
+│   ◄Using a Dialog Box►                                                       ░
+│   ◄MS-DOS Editor Options►                                                    ░
+│   ◄Copyright and Trademarks►                                                 ↓
+├───────────────────────────────── Untitled ───────────────────────────────────┤
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+ <F1=Help> <F6=Window> <Esc=Cancel> <Ctrl+F1=Next> <Alt+F1=Back>

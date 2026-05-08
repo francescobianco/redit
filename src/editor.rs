@@ -13,6 +13,7 @@ pub struct Editor {
     pub overtype: bool,
     pub dirty: bool,
     pub clip: String,
+    pub selection_anchor: Option<(usize, usize)>, // (x, y) where selection started
     highlighter: SyntaxHighlighter,
     pub highlighted: Vec<Line<'static>>,
 }
@@ -27,6 +28,7 @@ impl Editor {
             overtype: false,
             dirty: false,
             clip: String::new(),
+            selection_anchor: None,
             highlighter: SyntaxHighlighter::new(),
             highlighted: Vec::new(),
         };
@@ -249,13 +251,100 @@ impl Editor {
         }
     }
 
+    pub fn has_selection(&self) -> bool {
+        self.selection_anchor.map(|a| a != self.cursor).unwrap_or(false)
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
+    // Returns ((sx, sy), (ex, ey)) in document order (start ≤ end).
+    pub fn selection_range(&self) -> Option<((usize, usize), (usize, usize))> {
+        let anchor = self.selection_anchor?;
+        let cursor = self.cursor;
+        if (anchor.1, anchor.0) <= (cursor.1, cursor.0) {
+            Some((anchor, cursor))
+        } else {
+            Some((cursor, anchor))
+        }
+    }
+
+    pub fn get_selected_text(&self) -> String {
+        if !self.has_selection() {
+            return String::new();
+        }
+        let ((sx, sy), (ex, ey)) = match self.selection_range() {
+            Some(r) => r,
+            None => return String::new(),
+        };
+        if sy == ey {
+            let chars: Vec<char> = self.lines[sy].chars().collect();
+            chars[sx..ex.min(chars.len())].iter().collect()
+        } else {
+            let mut result = String::new();
+            for y in sy..=ey {
+                let chars: Vec<char> = self.lines[y].chars().collect();
+                if y == sy {
+                    result.extend(chars[sx..].iter());
+                    result.push('\n');
+                } else if y == ey {
+                    result.extend(chars[..ex.min(chars.len())].iter());
+                } else {
+                    result.push_str(&self.lines[y]);
+                    result.push('\n');
+                }
+            }
+            result
+        }
+    }
+
+    // Deletes the current selection and moves cursor to its start.
+    // Returns true if anything was deleted.
+    pub fn delete_selection(&mut self) -> bool {
+        if !self.has_selection() {
+            return false;
+        }
+        let ((sx, sy), (ex, ey)) = match self.selection_range() {
+            Some(r) => r,
+            None => return false,
+        };
+        if sy == ey {
+            let chars: Vec<char> = self.lines[sy].chars().collect();
+            let new_line: String = chars[..sx]
+                .iter()
+                .chain(chars[ex.min(chars.len())..].iter())
+                .collect();
+            self.lines[sy] = new_line;
+        } else {
+            let end_chars: Vec<char> = self.lines[ey].chars().collect();
+            let end_tail: String = end_chars[ex.min(end_chars.len())..].iter().collect();
+            let start_chars: Vec<char> = self.lines[sy].chars().collect();
+            self.lines[sy] = start_chars[..sx].iter().collect::<String>() + &end_tail;
+            self.lines.drain(sy + 1..=ey);
+        }
+        self.cursor = (sx, sy);
+        self.selection_anchor = None;
+        self.dirty = true;
+        self.highlight();
+        true
+    }
+
     pub fn copy_line(&mut self) {
-        if self.cursor.1 < self.lines.len() {
+        if self.has_selection() {
+            self.clip = self.get_selected_text();
+            self.selection_anchor = None;
+        } else if self.cursor.1 < self.lines.len() {
             self.clip = self.lines[self.cursor.1].clone();
         }
     }
 
     pub fn cut_line(&mut self) {
+        if self.has_selection() {
+            self.clip = self.get_selected_text();
+            self.delete_selection();
+            return;
+        }
         self.copy_line();
         if self.lines.len() > 1 {
             self.lines.remove(self.cursor.1);

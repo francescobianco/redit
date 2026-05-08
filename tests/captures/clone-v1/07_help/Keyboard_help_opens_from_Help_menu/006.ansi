@@ -1,0 +1,25 @@
+[38;5;0m[48;5;7m   File  Edit  Search  Options                                            Help
+[38;5;7m[48;5;0m┌───────────────────────────────[38;5;0m[48;5;7m HELP: Keyboard [38;5;7m[48;5;0m───────────────────────────────┐
+│ This section is designed to help you navigate and edit your text while       [38;5;0m[48;5;7m↑
+[38;5;7m[48;5;0m│ using the MS-DOS Editor.                                                     [38;5;0m[48;5;7m
+[38;5;7m[48;5;0m│                                                                              [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ Choose a topic below to see information on:                                  [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│                                                                              [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│     Shortcut Keys           Text-Selection Keys                              [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│     Help Keys               Insert and Copy Keys                             [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│     Cursor-Movement Keys    Delete Keys                                      [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│     Text-Scrolling Keys     Find and Change Keys                             [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│                                                                              [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ The MS-DOS Editor recognizes keystroke combinations familiar to users of     [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ other Microsoft programs (such as Microsoft Word) as well as WordStar key    [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ combinations. WordStar keystrokes that can be used in the MS-DOS Editor are  [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ listed in the right column of the three-column keystroke tables.             [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│                                                                              [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ Key                   Action                                                 [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ ────────────────────────────────────────────────────────────                 [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ Home                  Move to start of current line                          [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ End                   Move to end of current line                            [38;5;0m[48;5;7m░
+[38;5;7m[48;5;0m│ Ctrl+Home             Move to start of document                              [38;5;0m[48;5;7m↓
+[38;5;7m[48;5;0m└──────────────────────────────────────────────────────────────────────────────┘
+[38;5;0m[48;5;7m│← ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░→│
+[48;5;6m <F1=Help> <F6=Window> <Esc=Cancel> <Ctrl+F1=Next> <Alt+F1=Back>

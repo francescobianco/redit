@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# tests/run.sh — run Gherkin feature files against ONE editor target
+# tests/run.sh — run Gherkin feature files against ONE editor target + version
 #
 # Usage:
-#   EDITOR_TARGET=clone    bash tests/run.sh [features...]
-#   EDITOR_TARGET=original bash tests/run.sh [features...]
+#   EDITOR_TARGET=clone    EDITOR_VERSION=v1 bash tests/run.sh [features...]
+#   EDITOR_TARGET=clone    EDITOR_VERSION=v2 bash tests/run.sh [features...]
+#   EDITOR_TARGET=original EDITOR_VERSION=v1 bash tests/run.sh [features...]
 #
 # EDITOR_TARGET=clone    → runs redit (cargo run)
-# EDITOR_TARGET=original → runs EDIT.COM via dosemu
+# EDITOR_TARGET=original → runs EDIT.COM via dosemu (always V1)
 #
-# Each "Then the screen …" step saves a capture under:
-#   tests/captures/<target>/<feature>/<scenario>/<NNN>.txt
-#   tests/captures/<target>/<feature>/<scenario>/<NNN>.ansi
+# EDITOR_VERSION defaults to v1.  original only supports v1.
 #
-# The compare.sh script runs this twice (original + clone) then diffs.
+# Captures are saved under:
+#   tests/captures/<target>-<version>/<feature>/<scenario>/<NNN>.txt
+#   tests/captures/<target>-<version>/<feature>/<scenario>/<NNN>.ansi
+#
+# compare.sh runs clone-v1 vs original-v1 and diffs.
 
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 
-TARGET="${EDITOR_TARGET:-clone}"   # clone | original
+TARGET="${EDITOR_TARGET:-clone}"     # clone | original
+VERSION="${EDITOR_VERSION:-v1}"      # v1 | v2
 SESSION="redit_test"
 TERM_W="${TERM_W:-80}"
 TERM_H="${TERM_H:-25}"
-CAPTURES="$REPO/tests/captures/$TARGET"
+CAPTURES="$REPO/tests/captures/${TARGET}-${VERSION}"
 PASS=0; FAIL=0
 
 # ── Terminal output ────────────────────────────────────────────────────────────
@@ -38,7 +42,7 @@ _start_editor() {
           "dosemu -t -K '$REPO/dos/EDIT/V1' -E '${arg:-EDIT.COM}' 2>/dev/null" ;;
       clone)
         tmux new-session -d -s "$SESSION" -x "$TERM_W" -y "$TERM_H" \
-          "cd '$REPO'; cargo run -q -- --faithful $arg 2>/dev/null" ;;
+          "cd '$REPO'; cargo run -q -- --faithful --${VERSION} ${arg} 2>/dev/null" ;;
       *)
         echo "Unknown EDITOR_TARGET: $TARGET"; exit 1 ;;
     esac
@@ -228,7 +232,7 @@ main() {
     local features=("$@")
     [[ ${#features[@]} -eq 0 ]] && features=("$REPO/tests/features/"*.feature)
 
-    echo -e "${B}redit test runner${N}  target=${Y}$TARGET${N}  ${TERM_W}x${TERM_H}"
+    echo -e "${B}redit test runner${N}  target=${Y}${TARGET}-${VERSION}${N}  ${TERM_W}x${TERM_H}"
     trap _stop_editor EXIT
     for f in "${features[@]}"; do [[ -f "$f" ]] && _run_feature "$f"; done
     echo -e "\n${B}Results:${N} ${G}$PASS passed${N}  ${R}$FAIL failed${N}"
