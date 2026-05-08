@@ -45,7 +45,6 @@ Feature: Help system
     When I press M-h
     And I press Down
     And I press Down
-    And I press Down
     And I press Enter
     And I wait for the editor to settle
     Then the screen shows "redit"

@@ -112,12 +112,12 @@ _step() {
           local k="${text#I press }"
           _send "$k"; sleep 0.5 ;;
 
+      "I wait for the editor to settle")
+          sleep 1 ;;
+
       "I wait "*)
           local n; n=$(grep -oE '[0-9]+(\.[0-9]+)?' <<<"$text" | head -1)
           sleep "$n" ;;
-
-      "I wait for the editor to settle")
-          sleep 1 ;;
 
       # ── Screen assertions ─────────────────────────────────────────────────────
       "the screen is captured")
@@ -198,8 +198,8 @@ _run_feature() {
 
             step_n=$((step_n+1))
             local snap; snap=$(_snap_path "$file" "$scenario" "$step_n")
-            local out rc
-            out=$(_step "$kw" "$txt" "$snap" 2>&1); rc=$?
+            local out rc=0
+            out=$(_step "$kw" "$txt" "$snap" 2>&1) || rc=$?
 
             if [[ $rc -eq 0 ]]; then
                 echo -e "    ${G}✓${N} ${DIM}$kw${N} $txt"; PASS=$((PASS+1))

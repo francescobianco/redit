@@ -1919,6 +1919,10 @@ impl App {
                 self.mode = Mode::Menu { menu: 4, item: 0 };
             }
 
+            KeyCode::F(1) => {
+                self.mode = Mode::HelpGettingStarted { scroll: 0 };
+            }
+
             KeyCode::Char('s') if m == KeyModifiers::CONTROL => self.do_save(),
             KeyCode::F(2) => self.do_save(),
 
@@ -2460,6 +2464,7 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
+                return false;
             }
             KeyCode::Up => {
                 scroll = scroll.saturating_sub(1);
