@@ -361,15 +361,21 @@ impl App {
 
         // Render terminal pane if open
         if self.term_pane.is_some() {
-            let term_area = Rect::new(
-                0,
-                1 + edit_h,
-                size.width,
-                term_h,
-            );
-            // Borrow separately to satisfy the borrow checker
+            let term_area = Rect::new(0, 1 + edit_h, size.width, term_h);
+            let border_style = Style::default().bg(self.theme.frame_bg).fg(self.theme.frame_fg);
+            let inner_bg     = Style::default().bg(self.theme.edit_bg).fg(self.theme.edit_fg);
             let tp = self.term_pane.as_mut().unwrap();
-            tp.render(f, term_area);
+            tp.render(f, term_area, border_style, inner_bg);
+
+            // Place the real blinking cursor at the terminal's cursor position
+            if tp.focused {
+                let (cur_row, cur_col) = tp.parser.screen().cursor_position();
+                // +1 for left │ border, +1 for separator row
+                f.set_cursor_position((
+                    term_area.x + 1 + cur_col,
+                    term_area.y + 1 + cur_row,
+                ));
+            }
         }
 
         if let Mode::Menu { menu, item } = &self.mode {
@@ -704,6 +710,11 @@ impl App {
         }
 
         f.render_widget(Paragraph::new(Line::from(out)), area);
+    }
+
+    // False when the terminal pane is focused — suppresses the editor software cursor.
+    pub(super) fn editor_cursor_active(&self) -> bool {
+        !self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false)
     }
 
     // Returns the selected char-index range for a given line, if any.

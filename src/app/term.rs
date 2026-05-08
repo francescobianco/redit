@@ -11,6 +11,7 @@ use std::{
     sync::mpsc::{self, Receiver},
     thread,
 };
+use unicode_width::UnicodeWidthStr;
 
 const HISTORY_CAP: usize = 262_144; // 256 KB — bounds the resize replay cost
 
@@ -117,25 +118,29 @@ impl TermPane {
         }
     }
 
-    pub fn render(&mut self, f: &mut Frame, area: Rect) {
+    pub fn render(
+        &mut self,
+        f: &mut Frame,
+        area: Rect,
+        // Theme-derived styles so the pane matches the editor appearance
+        border_style: Style, // used for ├ ─ ┤ │ characters
+        inner_bg: Style,     // edit area background for empty cells
+    ) {
         self.drain();
         let screen = self.parser.screen();
 
-        let sep_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        let bdr_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        let inner_bg  = Style::default().bg(Color::Black).fg(Color::Reset);
-
         // ── Separator with ├ label ┤ connectors ──────────────────────────────
         let label = if self.focused {
-            " Terminal (Ctrl+T: unfocus  Ctrl+↑↓: resize) "
+            " Terminal (Ctrl+T: unfocus  Ctrl+Up/Dn: resize) "
         } else {
             " Terminal (Ctrl+T: focus) "
         };
-        // inner dashes: area.width - 2 (for ├ and ┤), minus label length
-        let inner_w = area.width.saturating_sub(2) as usize;
-        let dashes = inner_w.saturating_sub(label.len());
-        let left_d  = dashes / 2;
-        let right_d = dashes - left_d;
+        // Use display-width (not byte length) so multi-byte chars (↑ ↓) are counted correctly
+        let label_w = UnicodeWidthStr::width(label);
+        let inner_w = area.width.saturating_sub(2) as usize; // between ├ and ┤
+        let dashes   = inner_w.saturating_sub(label_w);
+        let left_d   = dashes / 2;
+        let right_d  = dashes - left_d;
         let sep_line = format!(
             "├{}{}{}┤",
             "─".repeat(left_d),
@@ -143,36 +148,36 @@ impl TermPane {
             "─".repeat(right_d),
         );
         f.render_widget(
-            Paragraph::new(Span::styled(sep_line, sep_style)),
+            Paragraph::new(Span::styled(sep_line, border_style)),
             Rect::new(area.x, area.y, area.width, 1),
         );
 
         // ── Content rows with │ borders ──────────────────────────────────────
-        let content_w = area.width.saturating_sub(2) as usize; // between the two │
+        let content_w = inner_w;
 
         for row in 0..self.height.min(area.height.saturating_sub(1)) {
             let y = area.y + 1 + row;
 
-            // Left border
+            // Left border │
             f.render_widget(
-                Paragraph::new(Span::styled("│", bdr_style)),
+                Paragraph::new(Span::styled("│", border_style)),
                 Rect::new(area.x, y, 1, 1),
             );
-            // Right border
+            // Right border │
             f.render_widget(
-                Paragraph::new(Span::styled("│", bdr_style)),
+                Paragraph::new(Span::styled("│", border_style)),
                 Rect::new(area.x + area.width - 1, y, 1, 1),
             );
 
-            // Terminal content in the inner area
+            // Terminal content
             let content_area = Rect::new(area.x + 1, y, content_w as u16, 1);
             let mut spans: Vec<Span> = Vec::new();
             let mut rendered = 0usize;
 
             for col in 0..self.width.min(content_w as u16) {
                 let Some(cell) = screen.cell(row, col) else { break };
-                let fg = vt_color(cell.fgcolor());
-                let bg = vt_color(cell.bgcolor());
+                let fg = vt_color(cell.fgcolor(), inner_bg.fg.unwrap_or(Color::Reset));
+                let bg = vt_color(cell.bgcolor(), inner_bg.bg.unwrap_or(Color::Reset));
                 let style = Style::default().fg(fg).bg(bg);
                 let ch = if cell.has_contents() {
                     cell.contents().to_string()
@@ -188,7 +193,7 @@ impl TermPane {
                 rendered += 1;
             }
 
-            // Pad remainder to content_w
+            // Pad remainder with editor background
             if rendered < content_w {
                 let pad = " ".repeat(content_w - rendered);
                 match spans.last_mut() {
@@ -199,17 +204,14 @@ impl TermPane {
                 }
             }
 
-            f.render_widget(
-                Paragraph::new(Line::from(spans)),
-                content_area,
-            );
+            f.render_widget(Paragraph::new(Line::from(spans)), content_area);
         }
     }
 }
 
-fn vt_color(c: vt100::Color) -> Color {
+fn vt_color(c: vt100::Color, default: Color) -> Color {
     match c {
-        vt100::Color::Default => Color::Reset,
+        vt100::Color::Default => default,
         vt100::Color::Idx(i) => Color::Indexed(i),
         vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
     }
