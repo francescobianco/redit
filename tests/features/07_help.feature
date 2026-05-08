@@ -9,14 +9,14 @@ Feature: Help system
   Scenario: F1 opens the Getting Started help window
     When I press F1
     And I wait for the editor to settle
-    Then the screen shows "HELP: Getting Started"
+    Then the screen shows "HELP: Survival Guide"
     And the screen is captured
 
   Scenario: Help window closes with Escape
     When I press F1
     And I press Escape
     And I wait for the editor to settle
-    Then the screen does not show "HELP: Getting Started"
+    Then the screen does not show "HELP: Survival Guide"
 
   Scenario: Help menu opens with Alt+H
     When I press M-h
@@ -30,7 +30,7 @@ Feature: Help system
     When I press M-h
     And I press Enter
     And I wait for the editor to settle
-    Then the screen shows "HELP: Getting Started"
+    Then the screen shows "HELP: Survival Guide"
     And the screen is captured
 
   Scenario: Keyboard help opens from Help menu

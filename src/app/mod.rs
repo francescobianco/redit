@@ -1575,16 +1575,26 @@ impl App {
 
     fn help_getting_started(&self, f: &mut Frame, scroll: usize) {
         let lines: &[&str] = &[
-            " This section helps you start and use the MS-DOS Editor.",
-            " Choose one of the following topics to see information on:",
+            "Using the MS-DOS Editor:",
             "",
-            "   Using Help",
-            "   Using Menus and Commands",
-            "   Using a Dialog Box",
-            "   MS-DOS Editor Options",
-            "   Copyright and Trademarks",
+            "  \u{25a0} To activate the MS-DOS Editor menu bar, press Alt.",
+            "  \u{25a0} To activate menus and commands, press the highlighted letter.",
+            "  \u{25a0} To move between menus and commands, use the direction keys.",
+            "  \u{25a0} To get help on a selected menu, command, or dialog box, press F1.",
+            "  \u{25a0} To exit Help, press Esc.",
+            "",
+            "Browsing the MS-DOS Editor Help system:",
+            "",
+            "  \u{25a0} To select one of the following topics, press the Tab key or the first",
+            "    letter of the topic. Then press the Enter key to see information on:",
+            "",
+            "    \u{25c4}Getting Started\u{25ba}  Loading and using the MS-DOS Editor and the",
+            "                       MS-DOS Editor Help system",
+            "    \u{25c4}Keyboard\u{25ba}         Editing and navigating text and MS-DOS Editor Help",
+            "",
+            "Tip: These topics are also available from the Help menu.",
         ];
-        self.render_help_window(f, "HELP: Getting Started", lines, scroll);
+        self.render_help_window(f, "HELP: Survival Guide", lines, scroll);
     }
 
     fn help_keyboard(&self, f: &mut Frame, scroll: usize) {
@@ -1628,83 +1638,65 @@ impl App {
 
     fn render_help_window(&self, f: &mut Frame, title: &str, lines: &[&str], scroll: usize) {
         let area = f.area();
-        // Help occupies top portion (above the editor bottom)
-        let help_h = (area.height.saturating_sub(2)).min(14);
+        // Help window: full-width, from row 2 to near-bottom, matching original MS-DOS EDIT.
+        // Leaves 2 rows below for the editor frame title + one content row.
+        let help_h = area.height.saturating_sub(3); // rows 1..(h-2)
         let help_area = Rect::new(0, 1, area.width, help_h);
         f.render_widget(Clear, help_area);
 
-        let box_s = Style::default().bg(Color::Blue).fg(Color::White);
-        let title_s = Style::default().bg(Color::Blue).fg(Color::White);
-        let scroll_s = Style::default().bg(Color::Blue).fg(Color::Gray);
+        // Color palette matching original:
+        //   [37m][40m] = Gray fg on Black bg  (body text, borders)
+        //   [30m][47m] = Black fg on Gray bg  (title, scroll indicators)
+        //   [97m][40m] = White fg on Black bg (section headings — bright white)
+        //   [92m][40m] = LightGreen fg on Black bg (hyperlink brackets ◄ ►)
+        let body_s   = Style::default().bg(Color::Black).fg(Color::Gray);
+        let title_s  = Style::default().bg(Color::Gray).fg(Color::Black);
+        let scroll_s = Style::default().bg(Color::Gray).fg(Color::Black);
+        let link_s   = Style::default().bg(Color::Black).fg(Color::LightGreen);
 
-        // Border
         let iw = help_area.width.saturating_sub(2) as usize;
+
+        // ── Top border with centered title ─────────────────────────────────
+        let title_str = format!(" {} ", title);
+        let dashes = iw.saturating_sub(title_str.len());
+        let ld = dashes / 2;
+        let rd = dashes - ld;
         f.render_widget(
-            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(iw)), box_s)),
+            Paragraph::new(Line::from(vec![
+                Span::styled("┌", body_s),
+                Span::styled("─".repeat(ld), body_s),
+                Span::styled(&title_str, title_s),
+                Span::styled("─".repeat(rd), body_s),
+                Span::styled("┐", body_s),
+            ])),
             Rect::new(help_area.x, help_area.y, help_area.width, 1),
         );
-        let title_str = format!(" {} ", title);
-        let tx = help_area.x + (help_area.width.saturating_sub(title_str.len() as u16)) / 2;
-        f.render_widget(
-            Paragraph::new(Span::styled(&title_str, title_s)),
-            Rect::new(tx, help_area.y, title_str.len() as u16, 1),
-        );
 
-        // Nav tabs row
-        let nav_row_y = help_area.y + 1;
-        f.render_widget(
-            Paragraph::new(Span::styled("│", box_s)),
-            Rect::new(help_area.x, nav_row_y, 1, 1),
-        );
-        let nav = "  ◄Getting Started►  ◄Keyboard►  ◄Back►";
-        f.render_widget(
-            Paragraph::new(Span::styled(
-                format!("{:<w$}", nav, w = iw),
-                box_s,
-            )),
-            Rect::new(help_area.x + 1, nav_row_y, iw as u16, 1),
-        );
-        f.render_widget(
-            Paragraph::new(Span::styled("│", box_s)),
-            Rect::new(help_area.x + help_area.width - 1, nav_row_y, 1, 1),
-        );
-
-        // Separator
-        let sep_y = help_area.y + 2;
-        f.render_widget(
-            Paragraph::new(Span::styled("│", box_s)),
-            Rect::new(help_area.x, sep_y, 1, 1),
-        );
-        f.render_widget(
-            Paragraph::new(Span::styled("─".repeat(iw), box_s)),
-            Rect::new(help_area.x + 1, sep_y, iw as u16, 1),
-        );
-        f.render_widget(
-            Paragraph::new(Span::styled("│", box_s)),
-            Rect::new(help_area.x + help_area.width - 1, sep_y, 1, 1),
-        );
-
-        // Content rows
-        let content_rows = help_h.saturating_sub(4) as usize; // -top border -nav -sep -bottom
+        // ── Content rows ────────────────────────────────────────────────────
+        let content_rows = help_h.saturating_sub(2) as usize; // exclude top+bottom borders
+        let total = lines.len();
         for row in 0..content_rows {
-            let y = help_area.y + 3 + row as u16;
+            let y = help_area.y + 1 + row as u16;
             let line_idx = scroll + row;
-            let text = if line_idx < lines.len() { lines[line_idx] } else { "" };
+            let text = if line_idx < total { lines[line_idx] } else { "" };
+            let content_w = iw; // full inner width; scroll char overlays last col
+
+            // Left border
             f.render_widget(
-                Paragraph::new(Span::styled("│", box_s)),
+                Paragraph::new(Span::styled("│", body_s)),
                 Rect::new(help_area.x, y, 1, 1),
             );
-            let content_w = iw.saturating_sub(1);
+
+            // Body line — render with heading/link highlighting
+            let padded = format!("{:<w$}", text, w = content_w);
+            let spans = Self::help_line_spans(&padded, body_s, link_s);
             f.render_widget(
-                Paragraph::new(Span::styled(
-                    format!("{:<w$}", text, w = content_w),
-                    box_s,
-                )),
+                Paragraph::new(Line::from(spans)),
                 Rect::new(help_area.x + 1, y, content_w as u16, 1),
             );
+
             // Scrollbar
-            let total = lines.len();
-            let sb = if row == 0 {
+            let sc = if row == 0 {
                 '↑'
             } else if row == content_rows - 1 {
                 '↓'
@@ -1712,36 +1704,74 @@ impl App {
                 ' '
             } else {
                 let thumb = (scroll * (content_rows - 2)) / total.max(1);
-                if row - 1 == thumb { ' ' } else { '░' }
+                if row.saturating_sub(1) == thumb { ' ' } else { '░' }
             };
             f.render_widget(
-                Paragraph::new(Span::styled(sb.to_string(), scroll_s)),
+                Paragraph::new(Span::styled(sc.to_string(), scroll_s)),
                 Rect::new(help_area.x + help_area.width - 1, y, 1, 1),
             );
         }
 
-        // Bottom border
+        // ── Bottom border (shares row with editor title using ├ ┤) ──────────
         f.render_widget(
-            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(iw)), box_s)),
-            Rect::new(
-                help_area.x,
-                help_area.y + help_h - 1,
-                help_area.width,
-                1,
-            ),
+            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(iw)), body_s)),
+            Rect::new(help_area.x, help_area.y + help_h - 1, help_area.width, 1),
         );
 
-        // Status bar for help window
-        let stat_y = area.height.saturating_sub(1);
-        let stat_s = Style::default().bg(Color::Cyan).fg(Color::White);
-        let stat_text = " <F1=Help>  <Esc=Cancel>";
+        // ── Status bar ────────────────────────────────────────────────────
+        let stat_s = Style::default().bg(Color::Cyan).fg(Color::Black);
+        let stat_text = " <F1=Help> <F6=Window> <Esc=Cancel> <Ctrl+F1=Next> <Alt+F1=Back>";
         f.render_widget(
             Paragraph::new(Span::styled(
                 format!("{:<w$}", stat_text, w = area.width as usize),
                 stat_s,
             )),
-            Rect::new(0, stat_y, area.width, 1),
+            Rect::new(0, area.height.saturating_sub(1), area.width, 1),
         );
+    }
+
+    /// Parse a help line and return spans with ◄ ► in link_s and rest in body_s.
+    fn help_line_spans<'a>(
+        text: &'a str,
+        body_s: Style,
+        link_s: Style,
+    ) -> Vec<Span<'a>> {
+        // Check if text has heading marker (starts with non-space after leading spaces,
+        // and uses the Bright-White heading style). Headings in the original are lines
+        // like "Using the MS-DOS Editor:" — we detect them as lines not starting with
+        // spaces that aren't borders.
+        let heading_s = Style::default().bg(Color::Black).fg(Color::White);
+        let is_heading = !text.starts_with(' ')
+            && !text.starts_with('│')
+            && !text.starts_with('─')
+            && !text.starts_with(' ')
+            && !text.trim().is_empty()
+            && !text.contains('■')
+            && !text.contains('◄');
+
+        if !text.contains('◄') && !text.contains('►') {
+            let s = if is_heading { heading_s } else { body_s };
+            return vec![Span::styled(text.to_string(), s)];
+        }
+        // Split on ◄ and ► to colorize link brackets
+        let mut spans = Vec::new();
+        let mut remaining = text;
+        loop {
+            if let Some(pos) = remaining.find(['◄', '►']) {
+                if pos > 0 {
+                    spans.push(Span::styled(remaining[..pos].to_string(), body_s));
+                }
+                let ch = &remaining[pos..pos + '◄'.len_utf8()];
+                spans.push(Span::styled(ch.to_string(), link_s));
+                remaining = &remaining[pos + ch.len()..];
+            } else {
+                if !remaining.is_empty() {
+                    spans.push(Span::styled(remaining.to_string(), body_s));
+                }
+                break;
+            }
+        }
+        spans
     }
 
     pub(super) fn btn(&self, f: &mut Frame, x: u16, y: u16, label: &str) {
