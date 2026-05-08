@@ -201,26 +201,6 @@ pub fn color_name(color: Color) -> &'static str {
     }
 }
 
-pub fn color_names() -> &'static [&'static str] {
-    &[
-        "black",
-        "blue",
-        "green",
-        "cyan",
-        "red",
-        "magenta",
-        "yellow",
-        "gray",
-        "dark_gray",
-        "light_blue",
-        "light_green",
-        "light_cyan",
-        "light_red",
-        "light_magenta",
-        "light_yellow",
-        "white",
-    ]
-}
 
 pub fn parse_color(value: &str) -> Option<Color> {
     match value.trim().to_ascii_lowercase().as_str() {
