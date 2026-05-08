@@ -1938,6 +1938,10 @@ impl App {
             KeyCode::Char('x') if m == KeyModifiers::CONTROL => {
                 self.editor.cut_line();
             }
+            // Ctrl+K — nano-style kill line (disabled in --faithful mode)
+            KeyCode::Char('k') if m == KeyModifiers::CONTROL && !self.faithful => {
+                self.editor.cut_line();
+            }
             KeyCode::Char('c') if m == KeyModifiers::CONTROL => {
                 self.editor.copy_line();
             }
