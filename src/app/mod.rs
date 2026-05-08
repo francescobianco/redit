@@ -275,9 +275,20 @@ impl App {
                     // When terminal pane is focused, forward all input to the PTY
                     // except Ctrl+T which toggles focus back to the editor
                     if self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false) {
-                        if k.code == KeyCode::Char('t') && k.modifiers == KeyModifiers::CONTROL {
+                        let ctrl = k.modifiers == KeyModifiers::CONTROL;
+                        if k.code == KeyCode::Char('t') && ctrl {
                             if let Some(tp) = &mut self.term_pane {
                                 tp.focused = false;
+                            }
+                        } else if k.code == KeyCode::Up && ctrl {
+                            if let Some(tp) = &mut self.term_pane {
+                                let new_h = (tp.height + 1).min(20);
+                                tp.resize(tp.width, new_h);
+                            }
+                        } else if k.code == KeyCode::Down && ctrl {
+                            if let Some(tp) = &mut self.term_pane {
+                                let new_h = tp.height.saturating_sub(1).max(3);
+                                tp.resize(tp.width, new_h);
                             }
                         } else {
                             self.forward_key_to_term(k);
