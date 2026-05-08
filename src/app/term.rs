@@ -2,7 +2,7 @@ use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySyste
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -176,19 +176,14 @@ impl TermPane {
 
             for col in 0..self.width.min(content_w as u16) {
                 let Some(cell) = screen.cell(row, col) else { break };
-                let fg = vt_color(cell.fgcolor(), inner_bg.fg.unwrap_or(Color::Reset));
-                let bg = vt_color(cell.bgcolor(), inner_bg.bg.unwrap_or(Color::Reset));
-                let style = Style::default().fg(fg).bg(bg);
                 let ch = if cell.has_contents() {
                     cell.contents().to_string()
                 } else {
                     " ".to_string()
                 };
                 match spans.last_mut() {
-                    Some(last) if last.style == style => {
-                        last.content = (last.content.to_string() + &ch).into();
-                    }
-                    _ => spans.push(Span::styled(ch, style)),
+                    Some(last) => last.content = (last.content.to_string() + &ch).into(),
+                    None => spans.push(Span::styled(ch, inner_bg)),
                 }
                 rendered += 1;
             }
@@ -209,10 +204,3 @@ impl TermPane {
     }
 }
 
-fn vt_color(c: vt100::Color, default: Color) -> Color {
-    match c {
-        vt100::Color::Default => default,
-        vt100::Color::Idx(i) => Color::Indexed(i),
-        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
-    }
-}
