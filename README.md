@@ -4,164 +4,270 @@
 binary used as reference is kept in `dos/EDIT/V1/EDIT.COM` together with
 `QBASIC.EXE` and `EDIT.HLP`.
 
-## Comparing redit with MS-DOS EDIT
+---
 
-Use `tmux` as a deterministic terminal harness and `dosemu` to run the original
-binary. Keep both panes at the same size, then capture their text and ANSI
+## Quick start
+
+```sh
+cargo run                      # open empty editor (V1 style)
+cargo run -- myfile.txt        # open a file
+cargo run -- --v2 myfile.txt   # open with V2 style
+make open-v1                   # run original MS-DOS EDIT V1 via dosemu
+```
+
+---
+
+## Gherkin test framework
+
+The test suite compares `redit` against the original `EDIT.COM` running
+inside `dosemu`. It uses `tmux` as a deterministic terminal harness.
+
+### Directory layout
+
+```
+tests/
+├── run.sh                  # Gherkin runner (bash)
+├── features/               # .feature files — one per topic
+│   ├── 01_welcome.feature
+│   ├── 02_typing.feature
+│   ├── 03_navigation.feature
+│   ├── 04_file_menu.feature
+│   ├── 05_edit_menu.feature
+│   ├── 06_search_menu.feature
+│   ├── 07_help.feature
+│   ├── 08_save_exit.feature
+│   ├── 09_status_bar.feature
+│   └── 10_display_options.feature
+└── snapshots/              # golden captures from dosemu (git-tracked)
+    └── <feature>/<scenario>/<NNN>.txt|.ansi
+```
+
+### Workflow
+
+**Step 1 — record golden snapshots from the original:**
+
+```sh
+make snapshot
+```
+
+This starts `dosemu` + `redit` side by side, drives both through every
+feature file, and saves the dosemu output as `tests/snapshots/**/*.txt`
+(plain text) and `tests/snapshots/**/*.ansi` (ANSI color stream).
+Commit the snapshot files so CI can run without `dosemu`.
+
+**Step 2 — run tests against the clone:**
+
+```sh
+make test
+```
+
+Starts `redit`, drives it through every feature file, and `diff`s the
+output against the golden snapshots. A non-zero exit means at least one
+step failed.
+
+**Single feature:**
+
+```sh
+make test-feature FEATURE=04_file_menu
+make snapshot-feature FEATURE=04_file_menu
+```
+
+### Writing a new feature
+
+Create `tests/features/NN_topic.feature`. Use standard Gherkin syntax.
+Available step vocabulary:
+
+#### Given / setup
+
+| Step | Effect |
+|---|---|
+| `both editors are started fresh` | kill + restart both tmux sessions (80×25) |
+| `both editors are started with file "<name>"` | open a specific file in both |
+| `the original editor is started` | start only dosemu |
+| `the clone is started` | start only redit |
+
+#### When / input
+
+| Step | Effect |
+|---|---|
+| `I send "<keys>" to both` | `tmux send-keys` to both sessions |
+| `I send "<keys>" to the clone` | `tmux send-keys` to redit only |
+| `I send "<keys>" to the original` | `tmux send-keys` to dosemu only |
+| `I wait <n> seconds` | `sleep n` |
+| `I wait for the editors to settle` | `sleep 1` |
+
+`<keys>` is passed verbatim to `tmux send-keys`. Use tmux key names:
+`Enter`, `Escape`, `BSpace`, `DC` (Delete), `IC` (Insert), `Up`, `Down`,
+`Left`, `Right`, `Home`, `End`, `PgUp`, `PgDn`, `F1`…`F12`,
+`M-f` (Alt+F), `C-s` (Ctrl+S), `C-Home`, `C-End`, `C-Left`, `C-Right`.
+Literal text is just quoted: `"hello world"`.
+
+Multiple tokens in one step: `"abc Enter def Left"`.
+
+#### Then / assertions
+
+| Step | Effect |
+|---|---|
+| `the screen text matches` | diff clone text against golden `.txt` |
+| `the screen colors match` | diff clone ANSI stream against golden `.ansi` |
+| `the screen matches` | text + color diff |
+| `the clone screen contains "<text>"` | grep for text in clone output |
+| `the clone screen does not contain "<text>"` | inverse grep |
+| `the clone shows "<text>" on line <N>` | check specific screen line |
+
+---
+
+## Comparing redit with MS-DOS EDIT manually
+
+Use `tmux` as a deterministic terminal harness and `dosemu` to run the
+original binary. Keep both panes at 80×25, then capture their text and ANSI
 attributes.
 
 ### Start both editors
 
-From the repository root:
-
 ```sh
-tmux kill-session -t redit_dos
-tmux kill-session -t redit_clone
+# Start the original (from repo root)
+tmux kill-session -t redit_dos   2>/dev/null; \
+tmux new-session  -d -s redit_dos -x 80 -y 25 \
+  "dosemu -t -K '$PWD/dos/EDIT/V1' -E EDIT.COM 2>/dev/null"
 
-tmux new-session -d -s redit_dos -x 80 -y 25 \
-  dosemu -t -K "$PWD/dos/EDIT/V1" -E EDIT.COM
-
-tmux new-session -d -s redit_clone -x 80 -y 25 \
-  cargo run
+# Start the clone
+tmux kill-session -t redit_clone 2>/dev/null; \
+tmux new-session  -d -s redit_clone -x 80 -y 25 \
+  "cargo run -q 2>/dev/null"
 ```
 
-If `tmux kill-session` reports that the session does not exist, ignore it.
-
-### Capture layout
-
-Plain text capture:
+Or use the Makefile shortcuts:
 
 ```sh
-tmux capture-pane -t redit_dos -p
+make sessions       # start both sessions
+make kill-sessions  # stop both
+```
+
+### Capture screen content
+
+Plain text (for layout comparison):
+
+```sh
+tmux capture-pane -t redit_dos   -p
 tmux capture-pane -t redit_clone -p
 ```
 
-Capture with terminal attributes and colors:
+Full ANSI escape sequences (for color comparison):
 
 ```sh
-tmux capture-pane -t redit_dos -e -p
+tmux capture-pane -t redit_dos   -e -p
 tmux capture-pane -t redit_clone -e -p
 ```
 
-The `-e` form is the important one for palette work. In the original V1 EDIT
-capture, the relevant SGR codes observed at 80x25 are:
-
-```text
-30;47  black on light gray: menu bar, scroll arrows/thumb, title highlight
-37;44  white on blue: editor background and most frame text
-34;47  blue on light gray: filename in the top border
-37;40  white on black: selected menu title and selected menu row
-97;46  bright white on cyan: status bar help text
-90;40  dark gray on black: drop shadow / disabled-looking menu text
-```
-
-When comparing colors, do not rely on screenshots first. Compare the ANSI
-attribute stream from `tmux capture-pane -e -p`, then use screenshots only as a
-visual sanity check.
-
-### Send keys and verify states
-
-Use `tmux send-keys` to drive both programs through the same interaction:
+Save and diff them:
 
 ```sh
-tmux send-keys -t redit_dos C-[
-tmux send-keys -t redit_clone Escape
-
-tmux send-keys -t redit_dos M-f
-tmux send-keys -t redit_clone M-f
-
-tmux send-keys -t redit_dos Right
-tmux send-keys -t redit_clone Right
-
-tmux send-keys -t redit_dos abc Enter def Left Left
-tmux send-keys -t redit_clone abc Enter def Left Left
+tmux capture-pane -t redit_dos   -p > /tmp/orig.txt
+tmux capture-pane -t redit_clone -p > /tmp/clone.txt
+diff /tmp/orig.txt /tmp/clone.txt
 ```
 
-Known key transport notes:
-
-- `M-f` opens the File menu in the original and in `redit`.
-- `F10` opens the menu in `redit`, but did not activate the V1 DOS EDIT menu in
-  the observed DOSEMU terminal run. The original status bar says `Press ALT to
-  activate menus`.
-- `C-[` cleared the original welcome dialog in DOSEMU. `Escape` cleared the
-  `redit` welcome dialog.
-- Validate special tmux key names before trusting a test. For example,
-  `tmux send-keys Backspace` was delivered as literal text `Backspace` in the
-  observed run. Prefer testing candidates such as `BSpace`, `C-h`, and `C-?`
-  against the captured editor contents before recording behavior.
-
-Always capture after each key step:
+### Send key input
 
 ```sh
-tmux capture-pane -t redit_dos -e -p
-tmux capture-pane -t redit_clone -e -p
+# Send keys to both sessions simultaneously
+tmux send-keys -t redit_dos   "M-f"   ; tmux send-keys -t redit_clone "M-f"
+tmux send-keys -t redit_dos   Enter   ; tmux send-keys -t redit_clone Enter
+tmux send-keys -t redit_dos   Escape  ; tmux send-keys -t redit_clone Escape
+
+# Type literal text
+tmux send-keys -t redit_dos   "hello world"
+tmux send-keys -t redit_clone "hello world"
+
+# Special keys
+tmux send-keys -t redit_dos   Up Down Left Right Home End PgUp PgDn
+tmux send-keys -t redit_clone Up Down Left Right Home End PgUp PgDn
+
+tmux send-keys -t redit_dos   DC        # Delete key
+tmux send-keys -t redit_clone DC
+
+tmux send-keys -t redit_dos   IC        # Insert key
+tmux send-keys -t redit_clone IC
 ```
 
-### Observed V1 differences to replicate
+Always capture after each step to record before/after state.
 
-Initial welcome state:
+### Known tmux key transport notes
 
-- Original filename title is `Untitled`; `redit` currently uses `UNTITLED1`.
-- Original menu bar spacing places `Help` at the far right. `redit` renders all
-  menu names consecutively.
-- Original welcome dialog text is:
-  `Welcome to the MS-DOS Editor`,
-  `Copyright (C) Microsoft Corporation, 1987-1992.`,
-  `All rights reserved.`,
-  and `< Press Enter to see the Survival Guide >`.
-- Original welcome dialog is 58 columns wide inside the border and starts lower
-  than the current `redit` dialog.
-- Original status bar in welcome mode is:
+- `M-f` opens the File menu in both the original and `redit`.
+- `Escape` closes dialogs in `redit`. Use `Escape` for both in tests.
+- `BSpace` is the correct tmux name for the Backspace key.
+- `DC` is the correct tmux name for the Delete key.
+- `IC` is the correct tmux name for the Insert key.
+- Literal key names like `Backspace` or `Delete` are sent as text, not
+  as control keys. Always use the tmux canonical names.
+- `C-[` (Ctrl+[) also sends ESC — useful when `Escape` is consumed by tmux.
+
+### SGR color palette observed in the original V1
+
+Decoded from `tmux capture-pane -e -p` on dosemu at 80×25:
+
+```
+[30m][47m]   Black fg / Light Gray bg   menu bar, all V1 dialog boxes, scroll arrows
+[37m][44m]   White fg / Blue bg         editor text area and frame borders
+[34m][47m]   Blue fg / Light Gray bg    filename in the top border
+[37m][40m]   White fg / Black bg        selected menu title, selected menu row
+[97m][46m]   Bright White / Cyan bg     status bar
+[90m][40m]   Dark Gray / Black bg       drop shadow on all dialogs and menus
+[97m]        Bright White fg (on Gray)  < > characters in V1 dialog buttons
+```
+
+When diagnosing a color difference: compare the SGR sequence per cell,
+not just the visual screenshot. Run `capture-pane -e -p` and inspect the
+stream directly.
+
+---
+
+## Observed V1 differences to replicate
+
+### Initial welcome state
+
+- Original filename title is `Untitled`; `redit` uses `Untitled`.
+- Original menu bar places `Help` at the far right. `redit` matches this.
+- Original welcome dialog body: Gray bg / Black fg. `redit` matches.
+- Original `< Press Enter >` row: only `<` and `>` are Bright White;
+  the rest of the row is Black on Gray. `redit` matches.
+- Original status bar in welcome mode:
   `F1=Help   Enter=Execute   Esc=Cancel   Tab=Next Field   Arrow=Next Item`.
-  `redit` omits the Tab and Arrow hints.
 
-Normal editor state:
+### Normal editor state
 
-- Original status bar left side is
-  `MS-DOS Editor  <F1=Help> Press ALT to activate menus`.
-- Original cursor position format is `00001:001`; `redit` currently uses
-  `Ln:   1  Col:  1`.
-- Original uses bright white on cyan for most status help and black on gray for
-  the right cursor-position field separator/area.
-- Original horizontal scrollbar has a blank light-gray cell after the left
-  arrow: `|<- space -░...->|`. `redit` currently starts the track immediately
-  after `←`.
-- Original scrollbar arrows/thumb are black on light gray, not white on blue.
+- Original status bar: `MS-DOS Editor  <F1=Help> Press ALT to activate menus`.
+- Original cursor position format: `00001:001` (five digits colon three digits).
+- Original horizontal scrollbar: blank cell after left arrow `← ░░░ →`.
+- Original scrollbar arrows/thumb: Black on Light Gray.
 
-File menu:
+### File menu
 
-- Original File menu contains `New`, `Open...`, `Save`, `Save As...`,
-  separator, `Print...`, separator, `Exit`.
-- `redit` currently omits `Print...`.
-- Original has no `Ctrl+S` shortcut text in this menu.
-- Original menu item accelerator letters are bright white; the rest is black on
-  light gray.
-- Original selected menu row is white on black and updates status help. For
-  `New`, the status help reads `Removes currently loaded file from memory`.
+- Contains: `New`, `Open...`, `Save`, `Save As...`, separator, `Print...`,
+  separator, `Exit`.
+- No `Ctrl+S` shortcut text.
+- Accelerator letters are Bright White; rest is Black on Light Gray.
+- Selected row: White on Black.
 
-Edit menu:
+### Edit menu
 
-- Original shortcuts are `Shift+Del`, `Ctrl+Ins`, `Shift+Ins`, and `Del`.
-- `redit` currently shows `Ctrl+X`, `Ctrl+C`, and `Ctrl+V`.
-- Original disabled-looking unavailable items render dark gray where
-  appropriate.
-- Original selected `Cut` status help reads
-  `Deletes selected text and copies it to buffer`.
+- Shortcuts: `Shift+Del`, `Ctrl+Ins`, `Shift+Ins`, `Del`.
 
-Search menu:
+### Search menu
 
-- Original V1 Search menu contains only `Find...`, `Repeat Last Find`, and
-  `Change...`.
-- `redit` currently also includes `Go To Line...`.
-- Original `Repeat Last Find` shows only `F3`.
-- Original selected `Find...` status help reads `Finds specified text`.
+- Items: `Find...`, `Repeat Last Find` (`F3`), `Change...`.
+- No `Go To Line...` entry.
 
-Workflow for adding more comparisons:
+---
 
-1. Start fresh `redit_dos` and `redit_clone` sessions at 80x25.
-2. Drive the same state with `tmux send-keys`.
+## Adding more comparisons
+
+1. Start fresh sessions: `make sessions`
+2. Drive the desired state with `tmux send-keys`.
 3. Capture both with `tmux capture-pane -e -p`.
-4. Record the exact key sequence, the visible text difference, and the ANSI
-   color/attribute difference.
-5. Update `redit` only after the original state is captured, so behavior changes
-   can be verified against the same script.
+4. Record the key sequence, text difference, and SGR color difference.
+5. Write a new `Scenario:` in the relevant `.feature` file.
+6. Run `make snapshot-feature FEATURE=NN_topic` to save the golden file.
+7. Run `make test-feature FEATURE=NN_topic` to verify the clone.
