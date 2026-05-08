@@ -205,6 +205,8 @@ pub struct App {
     pub(super) page_height: usize,
     pub(super) settings: UserSettings,
     pub theme: Theme,
+    // Ctrl+\ toggles keyboard debug mode; stores the last key description
+    pub(super) kbd_debug: Option<String>,
 }
 
 impl App {
@@ -238,6 +240,7 @@ impl App {
             page_height: 20,
             settings,
             theme,
+            kbd_debug: None,
         }
     }
 
@@ -388,6 +391,7 @@ impl App {
         };
         let area = Rect::new(x, 1, width, height);
 
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
         let drop_style = Style::default().fg(t.drop_fg).bg(t.drop_bg);
         let block = Block::default()
@@ -667,7 +671,9 @@ impl App {
         let w = area.width as usize;
 
         if self.theme.version == Version::V1 {
-            let left = if self.mode == Mode::Welcome {
+            let left = if let Some(dbg) = &self.kbd_debug {
+                format!(" {}", dbg)
+            } else if self.mode == Mode::Welcome {
                 " F1=Help   Enter=Execute   Esc=Cancel   Tab=Next Field   Arrow=Next Item"
                     .to_string()
             } else if matches!(self.mode, Mode::ConfirmNew | Mode::ConfirmExit) {
@@ -711,7 +717,9 @@ impl App {
         let dirty = if self.editor.dirty { "*" } else { " " };
         let right = format!("{}  Ln:{:>4}  Col:{:>3}  {}", dirty, cy + 1, cx + 1, ovr);
 
-        let left = if self.mode == Mode::Welcome {
+        let left = if let Some(dbg) = &self.kbd_debug {
+            format!(" {}", dbg)
+        } else if self.mode == Mode::Welcome {
             format!(" F1=Help   Enter=Execute   Esc=Cancel")
         } else if let Some(m) = &self.message {
             format!(" {}", m)
@@ -788,9 +796,41 @@ impl App {
         )
     }
 
+    /// Darken cells in the DOS-style drop-shadow area of `area` (2 cols right + 1 row below).
+    /// Uses buffer_mut so the underlying characters are preserved with a dark palette.
+    pub(super) fn render_shadow(f: &mut Frame, area: Rect) {
+        let size = f.area();
+        let buf = f.buffer_mut();
+        // Right strip: 2 cols wide, starting 1 row down (skip top row of dialog)
+        for dy in 1..area.height {
+            for dx in 0u16..2 {
+                let x = area.x.saturating_add(area.width).saturating_add(dx);
+                let y = area.y.saturating_add(dy);
+                if x < size.width && y < size.height {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_fg(Color::DarkGray).set_bg(Color::Black);
+                    }
+                }
+            }
+        }
+        // Bottom strip: dialog.width cols from x+2, 1 row below dialog
+        let y = area.y.saturating_add(area.height);
+        if y < size.height {
+            for dx in 2u16..area.width.saturating_add(2) {
+                let x = area.x.saturating_add(dx);
+                if x < size.width {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_fg(Color::DarkGray).set_bg(Color::Black);
+                    }
+                }
+            }
+        }
+    }
+
     fn input_dialog(&self, f: &mut Frame, title: &str, label: &str, input: &str) {
         let t = &self.theme;
         let area = Self::center_rect(f, 52, 7);
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
         let block = Block::default()
             .title(format!(" {} ", title))
@@ -825,33 +865,13 @@ impl App {
         if area.width < 12 || area.height < 8 {
             return;
         }
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
 
         let box_style = Style::default().bg(Color::Gray).fg(Color::Black);
         let title_style = Style::default().bg(Color::White).fg(Color::Black);
         let accel_style = Style::default().bg(Color::Gray).fg(Color::White);
-        let shadow_style = Style::default().bg(Color::Black).fg(Color::DarkGray);
         let inner_w = area.width.saturating_sub(2) as usize;
-
-        if area.x + area.width + 2 <= size.width {
-            for y in area.y + 1..area.y + area.height {
-                f.render_widget(
-                    Paragraph::new(Span::styled("  ", shadow_style)),
-                    Rect::new(area.x + area.width, y, 2, 1),
-                );
-            }
-        }
-        if area.y + area.height < size.height.saturating_sub(1) {
-            f.render_widget(
-                Paragraph::new(Span::styled(" ".repeat(area.width as usize), shadow_style)),
-                Rect::new(
-                    area.x + 2,
-                    area.y + area.height,
-                    area.width.saturating_sub(2),
-                    1,
-                ),
-            );
-        }
 
         let title = " Save As ";
         let side = inner_w.saturating_sub(title.len());
@@ -1088,6 +1108,7 @@ impl App {
             46.min(size.width),
             7.min(size.height),
         );
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
 
         let box_style = Style::default()
@@ -1096,21 +1117,7 @@ impl App {
         let hilite_style = Style::default()
             .bg(ratatui::style::Color::Gray)
             .fg(ratatui::style::Color::White);
-        let shadow_style = Style::default()
-            .bg(ratatui::style::Color::Black)
-            .fg(ratatui::style::Color::DarkGray);
         let iw = area.width as usize - 2;
-
-        for y in area.y + 1..area.y + area.height {
-            f.render_widget(
-                Paragraph::new(Span::styled("  ", shadow_style)),
-                Rect::new(area.x + area.width, y, 2, 1),
-            );
-        }
-        f.render_widget(
-            Paragraph::new(Span::styled(" ".repeat(area.width as usize), shadow_style)),
-            Rect::new(area.x + 2, area.y + area.height, area.width, 1),
-        );
 
         f.render_widget(
             Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(iw)), box_style)),
@@ -1171,6 +1178,7 @@ impl App {
     fn confirm_dialog(&self, f: &mut Frame, title: &str, msg: &str) {
         let t = &self.theme;
         let area = Self::center_rect(f, 52, 7);
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
         let block = Block::default()
             .title(format!(" {} ", title))
@@ -1192,6 +1200,7 @@ impl App {
     fn about_dialog(&self, f: &mut Frame) {
         let t = &self.theme;
         let area = Self::center_rect(f, 42, 9);
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
         let block = Block::default()
             .title(" About redit ")
@@ -1230,6 +1239,7 @@ impl App {
     fn replace_dialog(&self, f: &mut Frame, find: &str, replace: &str, focus: usize) {
         let t = &self.theme;
         let area = Self::center_rect(f, 55, 10);
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
         let block = Block::default()
             .title(" Change ")
@@ -1296,32 +1306,13 @@ impl App {
 
         // Outer dialog box: 66 wide, 22 tall (faithful to original V1)
         let area = Self::center_rect(f, 66, 22);
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
 
         let box_s = Style::default().bg(Color::Gray).fg(Color::Black);
         let title_s = Style::default().bg(Color::White).fg(Color::Black);
-        let shadow_s = Style::default().bg(Color::Black).fg(Color::DarkGray);
         let sel_s = Style::default().bg(Color::Black).fg(Color::White);
         let inner_w = area.width.saturating_sub(2) as usize;
-
-        // Drop shadow
-        if area.x + area.width + 1 < f.area().width {
-            for row in 1..area.height {
-                f.render_widget(
-                    Paragraph::new(Span::styled("  ", shadow_s)),
-                    Rect::new(area.x + area.width, area.y + row, 2, 1),
-                );
-            }
-        }
-        if area.y + area.height < f.area().height {
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    " ".repeat(area.width.saturating_sub(2) as usize),
-                    shadow_s,
-                )),
-                Rect::new(area.x + 2, area.y + area.height, area.width.saturating_sub(2), 1),
-            );
-        }
 
         // Outer box borders
         self.draw_box(f, area, box_s, " Display ", title_s);
@@ -1821,7 +1812,53 @@ impl App {
 
     // ── Key handling ──────────────────────────────────────────────────────────
 
+    fn key_desc(key: KeyEvent) -> String {
+        let mut parts = Vec::new();
+        let m = key.modifiers;
+        if m.contains(KeyModifiers::CONTROL) { parts.push("Ctrl"); }
+        if m.contains(KeyModifiers::ALT)     { parts.push("Alt"); }
+        if m.contains(KeyModifiers::SHIFT)   { parts.push("Shift"); }
+        let code = match key.code {
+            KeyCode::Char(' ')        => "Space".to_string(),
+            KeyCode::Char(c)          => format!("{}", c),
+            KeyCode::F(n)             => format!("F{}", n),
+            KeyCode::Enter            => "Enter".to_string(),
+            KeyCode::Esc              => "Esc".to_string(),
+            KeyCode::Backspace        => "Backspace".to_string(),
+            KeyCode::Delete           => "Delete".to_string(),
+            KeyCode::Tab              => "Tab".to_string(),
+            KeyCode::BackTab          => "BackTab".to_string(),
+            KeyCode::Left             => "Left".to_string(),
+            KeyCode::Right            => "Right".to_string(),
+            KeyCode::Up               => "Up".to_string(),
+            KeyCode::Down             => "Down".to_string(),
+            KeyCode::Home             => "Home".to_string(),
+            KeyCode::End              => "End".to_string(),
+            KeyCode::PageUp           => "PgUp".to_string(),
+            KeyCode::PageDown         => "PgDn".to_string(),
+            KeyCode::Insert           => "Ins".to_string(),
+            KeyCode::Null             => "Null".to_string(),
+            KeyCode::Modifier(mc)     => format!("{:?}", mc),
+            _                         => format!("{:?}", key.code),
+        };
+        parts.push(&code);
+        parts.join("+")
+    }
+
     fn handle_key(&mut self, key: KeyEvent) -> bool {
+        // F12 toggles keyboard debug mode (works in any mode, no ambiguous byte)
+        if key.code == KeyCode::F(12) && key.modifiers == KeyModifiers::NONE {
+            self.kbd_debug = match self.kbd_debug {
+                None    => Some("KBD DEBUG ON — press keys (F12=off)".to_string()),
+                Some(_) => None,
+            };
+            return false;
+        }
+        // In debug mode record every key description in the status bar slot
+        if self.kbd_debug.is_some() {
+            self.kbd_debug = Some(format!("KBD: {}  [raw code={:?} mod={:?}]",
+                Self::key_desc(key), key.code, key.modifiers));
+        }
         match self.mode.clone() {
             Mode::Normal => self.key_normal(key),
             Mode::Welcome => {
@@ -1884,6 +1921,14 @@ impl App {
 
             KeyCode::Char('s') if m == KeyModifiers::CONTROL => self.do_save(),
             KeyCode::F(2) => self.do_save(),
+
+            KeyCode::Char('x') if m == KeyModifiers::CONTROL => {
+                if self.editor.dirty {
+                    self.mode = Mode::ConfirmExit;
+                } else {
+                    return true;
+                }
+            }
 
             KeyCode::Char('f') if m == KeyModifiers::CONTROL => {
                 self.mode = Mode::Find(self.last_find.clone());

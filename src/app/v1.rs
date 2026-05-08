@@ -204,6 +204,7 @@ impl App {
             58.min(size.width),
             11.min(size.height),
         );
+        Self::render_shadow(f, area);
         f.render_widget(Clear, area);
 
         let dlg_style = Style::default().bg(t.dlg_bg).fg(t.dlg_fg);
