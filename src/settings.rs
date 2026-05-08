@@ -6,6 +6,8 @@ use std::{env, fs, io, path::PathBuf};
 pub struct UserSettings {
     pub style: Version,
     pub colors: ThemeColors,
+    pub scroll_bars: bool,
+    pub tab_stops: u8,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +31,8 @@ impl Default for UserSettings {
         Self {
             style: Version::V1,
             colors: ThemeColors::from_theme(&theme::v1()),
+            scroll_bars: true,
+            tab_stops: 8,
         }
     }
 }
@@ -45,10 +49,21 @@ impl UserSettings {
         let entries = parse_ini_entries(&text);
         let mut settings = Self::default();
         for (section, key, value) in &entries {
-            if section == "editor" && key == "style" {
-                if let Some(version) = parse_version(value) {
-                    settings.style = version;
-                    settings.colors = ThemeColors::from_theme(&base_theme(version));
+            if section == "editor" {
+                match key.as_str() {
+                    "style" => {
+                        if let Some(version) = parse_version(value) {
+                            settings.style = version;
+                            settings.colors = ThemeColors::from_theme(&base_theme(version));
+                        }
+                    }
+                    "scroll_bars" => settings.scroll_bars = value != "0" && value != "false",
+                    "tab_stops" => {
+                        if let Ok(n) = value.parse::<u8>() {
+                            settings.tab_stops = n.max(1).min(40);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -85,8 +100,10 @@ impl UserSettings {
     fn to_ini(&self) -> String {
         let c = &self.colors;
         format!(
-            "[editor]\nstyle={}\n\n[colors]\nmenu_fg={}\nmenu_bg={}\neditor_fg={}\neditor_bg={}\nstatus_fg={}\nstatus_bg={}\ndialog_fg={}\ndialog_bg={}\ntitle_fg={}\ntitle_bg={}\nscrollbar_fg={}\nscrollbar_bg={}\n",
+            "[editor]\nstyle={}\nscroll_bars={}\ntab_stops={}\n\n[colors]\nmenu_fg={}\nmenu_bg={}\neditor_fg={}\neditor_bg={}\nstatus_fg={}\nstatus_bg={}\ndialog_fg={}\ndialog_bg={}\ntitle_fg={}\ntitle_bg={}\nscrollbar_fg={}\nscrollbar_bg={}\n",
             version_name(self.style),
+            if self.scroll_bars { "true" } else { "false" },
+            self.tab_stops,
             color_name(c.menu_fg),
             color_name(c.menu_bg),
             color_name(c.editor_fg),
