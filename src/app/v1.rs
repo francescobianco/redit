@@ -12,8 +12,8 @@ impl App {
     // ── V1 editor area ────────────────────────────────────────────────────────
 
     /// Faithful MS-DOS EDIT look:
-    ///   top border with centred filename, vertical scrollbar, horizontal
-    ///   scrollbar on the last row, no bottom border.
+    ///   top body with centred filename, vertical scrollbar, horizontal
+    ///   scrollbar on the last row, no bottom body.
     pub(super) fn render_editor_v1(&mut self, f: &mut Frame, area: Rect) {
         let t = &self.theme;
         let frame_style = Style::default().bg(t.frame_bg).fg(t.frame_fg);
@@ -24,7 +24,7 @@ impl App {
         let cur_style = Style::default().bg(t.edit_fg).fg(t.edit_bg);
         let w = area.width as usize;
 
-        // ── Top border with centred filename ──────────────────────────────────
+        // ── Top body with centred filename ──────────────────────────────────
         let fname = self
             .editor
             .filename
@@ -50,7 +50,7 @@ impl App {
             Rect::new(area.x, area.y, area.width, 1),
         );
 
-        // ── Content rows (area.height - 2: top border + horizontal scrollbar)
+        // ── Content rows (area.height - 2: top body + horizontal scrollbar)
         let content_h = (area.height - 2) as usize;
         let text_w = w.saturating_sub(2); // between │ and vertical scrollbar
 
@@ -75,7 +75,7 @@ impl App {
             let screen_y = area.y + 1 + row as u16;
             let line_idx = sy + row;
 
-            // Left border │ — same background as text area so it blends in
+            // Left body │ — same background as text area so it blends in
             f.render_widget(
                 Paragraph::new(Span::styled("│", side_style)),
                 Rect::new(area.x, screen_y, 1, 1),
@@ -196,7 +196,6 @@ impl App {
     // ── V1 welcome / credits dialog ───────────────────────────────────────────
 
     pub(super) fn welcome_dialog(&self, f: &mut Frame) {
-        let t = &self.theme;
         let size = f.area();
         let area = Rect::new(
             size.width.saturating_sub(58) / 2 + 1,
@@ -207,68 +206,65 @@ impl App {
         Self::render_shadow(f, area);
         f.render_widget(Clear, area);
 
-        let dlg_style = Style::default().bg(t.dlg_bg).fg(t.dlg_fg);
-        let line_style = Style::default().bg(t.frame_bg).fg(t.frame_fg);
+        // V1 faithful palette (decoded from dosemu ANSI capture):
+        //   body/body = [30m][47m] = Black fg / Gray bg  (entire dialog)
+        //   bright      = [97m]     = Bright White fg / Gray bg (only < and > chars)
+        let body   = Style::default().bg(ratatui::style::Color::Gray).fg(ratatui::style::Color::Black);
+        let bright = Style::default().bg(ratatui::style::Color::Gray).fg(ratatui::style::Color::White);
         let iw = area.width as usize - 2;
 
-        // Top border
+        // Top body
         f.render_widget(
-            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(iw)), line_style)),
+            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(iw)), body)),
             Rect::new(area.x, area.y, area.width, 1),
         );
 
-        let rows: &[&str] = &[
+        // Render a full-width dialog row: │ [content] │
+        let row = |f: &mut Frame, y: u16, spans: Vec<Span>| {
+            f.render_widget(Paragraph::new(Span::styled("│", body)), Rect::new(area.x, y, 1, 1));
+            f.render_widget(Paragraph::new(Line::from(spans)), Rect::new(area.x + 1, y, iw as u16, 1));
+            f.render_widget(Paragraph::new(Span::styled("│", body)), Rect::new(area.x + area.width - 1, y, 1, 1));
+        };
+
+        // Body rows: all Gray/Black
+        let body_rows: &[&str] = &[
             "",
             "              Welcome to the MS-DOS Editor",
             "",
             "     Copyright (C) Microsoft Corporation, 1987-1992.",
             "                  All rights reserved.",
             "",
-            "       < Press Enter to see the Survival Guide >",
         ];
-
-        for (i, &row) in rows.iter().enumerate() {
-            let y = area.y + 1 + i as u16;
-            f.render_widget(
-                Paragraph::new(Span::styled("│", line_style)),
-                Rect::new(area.x, y, 1, 1),
-            );
-            f.render_widget(
-                Paragraph::new(Span::styled(format!("{:<w$}", row, w = iw), dlg_style)),
-                Rect::new(area.x + 1, y, iw as u16, 1),
-            );
-            f.render_widget(
-                Paragraph::new(Span::styled("│", line_style)),
-                Rect::new(area.x + area.width - 1, y, 1, 1),
-            );
+        for (i, &text) in body_rows.iter().enumerate() {
+            row(f, area.y + 1 + i as u16,
+                vec![Span::styled(format!("{:<w$}", text, w = iw), body)]);
         }
 
+        // "Press Enter" row: only < and > in Bright White ([97m]), text in Black
+        let btn_y = area.y + 1 + body_rows.len() as u16;
+        let btn_raw = "       < Press Enter to see the Survival Guide >       ";
+        let pad = iw.saturating_sub(btn_raw.chars().count());
+        let mut btn_spans: Vec<Span> = btn_raw.chars().map(|ch| {
+            Span::styled(ch.to_string(), if ch == '<' || ch == '>' { bright } else { body })
+        }).collect();
+        if pad > 0 { btn_spans.push(Span::styled(" ".repeat(pad), body)); }
+        row(f, btn_y, btn_spans);
+
         // Separator ├──┤
-        let sep_y = area.y + 1 + rows.len() as u16;
+        let sep_y = btn_y + 1;
         f.render_widget(
-            Paragraph::new(Span::styled(format!("├{}┤", "─".repeat(iw)), line_style)),
+            Paragraph::new(Span::styled(format!("├{}┤", "─".repeat(iw)), body)),
             Rect::new(area.x, sep_y, area.width, 1),
         );
 
-        // ESC dismiss row
+        // ESC dismiss row: all Gray/Black (no highlighting on < >)
         let esc_y = sep_y + 1;
         let esc_text = format!("{:^w$}", "< Press ESC to clear this dialog box >", w = iw);
-        f.render_widget(
-            Paragraph::new(Span::styled("│", line_style)),
-            Rect::new(area.x, esc_y, 1, 1),
-        );
-        f.render_widget(
-            Paragraph::new(Span::styled(esc_text, dlg_style)),
-            Rect::new(area.x + 1, esc_y, iw as u16, 1),
-        );
-        f.render_widget(
-            Paragraph::new(Span::styled("│", line_style)),
-            Rect::new(area.x + area.width - 1, esc_y, 1, 1),
-        );
+        row(f, esc_y, vec![Span::styled(esc_text, body)]);
 
-        // Bottom border
+        // Bottom body
         f.render_widget(
-            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(iw)), line_style)),
+            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(iw)), body)),
             Rect::new(area.x, esc_y + 1, area.width, 1),
         );
     }
