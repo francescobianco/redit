@@ -1,0 +1,39 @@
+== Emoji basic ==
+😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚
+🎉 🎊 🎈 🎁 🎀 🎗 🎟 🎫 🎖 🏆 🥇 🥈 🥉 🏅 🎽 🎮 🕹 🎲 🎯 🎳
+
+== Emoji in context ==
+User clicked 👆 the button ✅ and the process 🔄 completed 🎉
+Error: ❌ File not found 📁 — please check the path 🗂️
+Warning: ⚠️ Memory usage at 99% 📊 — system may be unstable 💥
+
+== Multi-codepoint emoji (ZWJ sequences) ==
+👨‍💻 👩‍💻 🧑‍💻 👨‍🎨 👩‍🎨 🧑‍🎨
+👨‍🚀 👩‍🚀 🧑‍🚀 👨‍⚕️ 👩‍⚕️ 🏳️‍🌈 🏳️‍⚧️
+
+== Flags (regional indicators) ==
+🇮🇹 🇺🇸 🇬🇧 🇩🇪 🇫🇷 🇯🇵 🇨🇳 🇷🇺 🇧🇷 🇰🇷 🇦🇺 🇨🇦 🇲🇽 🇪🇸
+
+== Combining characters ==
+e + combining acute: é (two codepoints: U+0065 U+0301)
+a + combining umlaut: ä (two codepoints: U+0061 U+0308)
+n + combining tilde: ñ (two codepoints: U+006E U+0303)
+Devanagari: क्ष (ksha, three codepoints)
+
+== CJK wide characters (each occupies 2 terminal columns) ==
+中文測試：这是一段中文文字，用于测试编辑器对中文字符的处理能力。
+日本語テスト：これは日本語のテストです。エディタが全角文字を正しく扱えるかを確認します。
+한국어 테스트: 이것은 한국어 테스트입니다. 편집기가 한국어 문자를 올바르게 처리하는지 확인합니다.
+
+== Mixed ASCII and wide ==
+File: /home/user/文档/测试.txt (12 bytes)
+Error in 第3行 column 5: unexpected token '你好'
+Path: C:\Users\用户名\Documents\文件夹\
+
+== Arabic (right-to-left) ==
+مرحبا بالعالم — Hello World in Arabic
+هذا النص يحتوي على كلمات عربية مختلطة with English text
+
+== Long emoji line ==
+🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎💎

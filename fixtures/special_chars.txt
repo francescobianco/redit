@@ -1,0 +1,49 @@
+== ASCII special characters ==
+!"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~
+
+== Box drawing and block elements ==
+┌─┬─┐  ╔═╦═╗  ╭─┬─╮
+│ │ │  ║ ║ ║  │ │ │
+├─┼─┤  ╠═╬═╣  ├─┼─┤
+│ │ │  ║ ║ ║  │ │ │
+└─┴─┘  ╚═╩═╝  ╰─┴─╯
+
+▀▄█▌▐░▒▓ ▁▂▃▄▅▆▇█
+
+== Mathematical and currency symbols ==
+∀ ∂ ∃ ∅ ∆ ∇ ∈ ∉ ∋ ∏ ∑ √ ∞ ∧ ∨ ∩ ∪ ∫ ≈ ≠ ≡ ≤ ≥
+€ £ ¥ ¢ ₿ ₽ ₹ ₩ ₺ ₴ ₦ ₫ ₭ ₮
+
+== Latin extended ==
+ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ
+àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ
+ĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁł
+
+== Greek ==
+ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ
+αβγδεζηθικλμνξοπρστυφχψω
+
+== Cyrillic ==
+АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ
+абвгдежзийклмнопрстуфхцчшщъыьэюя
+
+== Arrows and misc ==
+← → ↑ ↓ ↔ ↕ ↖ ↗ ↘ ↙ ⇐ ⇒ ⇑ ⇓ ⇔ ⇕
+• · ° ± × ÷ § ¶ © ® ™ ¡ ¿
+
+== Zero-width characters ==
+ZWJ between letters: A‍B (A + U+200D + B)
+ZWNJ: fi (f + U+200C + i)
+Word joiner: hello world (word + U+2060 + joiner)
+BOM: ﻿start of line (U+FEFF at start)
+
+== Tabs at various positions ==
+Col1	Col2	Col3	Col4
+A	BB	CCC	DDDD
+Short	MediumLen	VeryLongColumnValue	X
+
+== Lines with mixed content ==
+Price: €1.234,56 (note: dot=thousands, comma=decimal in Italian)
+Regex: ^(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+)\.([a-zA-Z]{2,})(.*)$
+SQL: SELECT * FROM "users" WHERE name = 'O''Brien' AND age >= 18;
+JSON: {"key": "value with \"escaped\" quotes and \\backslashes\\", "n": null}

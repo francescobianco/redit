@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 use std::{env, fs, io};
+use unicode_width::UnicodeWidthChar;
 
 use crate::editor::Editor;
 use crate::settings::UserSettings;
@@ -456,6 +457,67 @@ impl App {
     }
 
     /// Render one row of text with an inverted cursor cell.
+    /// Returns the display width of a character, expanding tabs to the next tab stop.
+    /// `col` is the current display column (0-based) before this character.
+    fn char_display_width(c: char, col: usize, tab_stop: usize) -> usize {
+        if c == '\t' {
+            tab_stop - (col % tab_stop)
+        } else {
+            UnicodeWidthChar::width(c).unwrap_or(0)
+        }
+    }
+
+    /// Builds a screen-ready string of exactly `vw` display columns from `chars`
+    /// starting at char index `sx`, with tab expansion.  Returns (string, cursor_col)
+    /// where cursor_col is the display column of `cx` within the returned string
+    /// (or None when cx is not in the visible range).
+    fn chars_to_display(
+        chars: &[char],
+        sx: usize,
+        cx: usize,
+        vw: usize,
+        tab_stop: usize,
+        cursor_here: bool,
+    ) -> (String, Option<usize>, usize) {
+        // First: compute column of sx in the raw line so tab positions are correct.
+        let mut raw_col = 0usize;
+        for &c in chars.iter().take(sx) {
+            raw_col += Self::char_display_width(c, raw_col, tab_stop);
+        }
+
+        let mut out = String::new();
+        let mut used_cols = 0usize;
+        let mut cursor_col: Option<usize> = None;
+
+        for (i, &c) in chars.iter().enumerate().skip(sx) {
+            let w = Self::char_display_width(c, raw_col, tab_stop);
+            if used_cols + w > vw {
+                break;
+            }
+            if cursor_here && i == cx {
+                cursor_col = Some(used_cols);
+            }
+            if c == '\t' {
+                out.push_str(&" ".repeat(w));
+            } else {
+                out.push(c);
+            }
+            used_cols += w;
+            raw_col += w;
+        }
+        // If cursor is past the end of content (empty line or cx == len)
+        if cursor_here && cursor_col.is_none() && cx >= chars.len() && used_cols < vw {
+            cursor_col = Some(used_cols);
+            out.push(' ');
+            used_cols += 1;
+        }
+        // Pad remainder
+        if used_cols < vw {
+            out.push_str(&" ".repeat(vw - used_cols));
+        }
+        (out, cursor_col, used_cols)
+    }
+
     pub(super) fn render_text_row(
         f: &mut Frame,
         area: Rect,
@@ -467,40 +529,64 @@ impl App {
         cur_style: Style,
     ) {
         let vw = area.width as usize;
+        let tab_stop = 8; // TODO: wire up settings.tab_stops
 
-        if !cursor_here {
-            let s: String = chars.iter().skip(sx).take(vw).collect();
-            let pad = vw.saturating_sub(s.chars().count());
+        let (display, cursor_col, _) =
+            Self::chars_to_display(chars, sx, cx, vw, tab_stop, cursor_here);
+
+        let Some(cc) = cursor_col else {
+            // No cursor on this row — render as a single styled span
             f.render_widget(
-                Paragraph::new(Span::styled(format!("{}{}", s, " ".repeat(pad)), base)),
+                Paragraph::new(Span::styled(display, base)),
                 area,
             );
             return;
+        };
+
+        // Split display string at the cursor column
+        // display is already exactly vw display cols wide
+        let bytes_before = display
+            .char_indices()
+            .scan(0usize, |col, (byte_i, c)| {
+                if *col < cc {
+                    *col += UnicodeWidthChar::width(c).unwrap_or(1);
+                    Some(byte_i)
+                } else {
+                    None
+                }
+            })
+            .last()
+            .map(|bi| {
+                // advance past last char
+                let c = display[bi..].chars().next().unwrap();
+                bi + c.len_utf8()
+            })
+            .unwrap_or(0);
+
+        let before = &display[..bytes_before];
+        // cursor char: may be a multi-byte char; take chars until width >= 1
+        let mut cur_end = bytes_before;
+        let mut cur_w = 0usize;
+        for c in display[bytes_before..].chars() {
+            cur_end += c.len_utf8();
+            cur_w += UnicodeWidthChar::width(c).unwrap_or(1);
+            if cur_w >= 1 {
+                break;
+            }
         }
+        let cursor_ch = &display[bytes_before..cur_end];
+        let after = &display[cur_end..];
 
-        let mut spans: Vec<Span> = Vec::new();
-
-        if cx > sx {
-            let s: String = chars.iter().skip(sx).take(cx - sx).collect();
-            spans.push(Span::styled(s, base));
+        let mut spans = Vec::with_capacity(3);
+        if !before.is_empty() {
+            spans.push(Span::styled(before.to_string(), base));
         }
-
         spans.push(Span::styled(
-            chars.get(cx).copied().unwrap_or(' ').to_string(),
+            if cursor_ch.is_empty() { " ".to_string() } else { cursor_ch.to_string() },
             cur_style,
         ));
-
-        let after_start = cx + 1;
-        let after_end = (sx + vw).min(chars.len());
-        if after_start < after_end {
-            let s: String = chars[after_start..after_end].iter().collect();
-            spans.push(Span::styled(s, base));
-        }
-
-        let used = (cx.saturating_sub(sx) + 1).min(vw) + after_end.saturating_sub(after_start);
-        let rem = vw.saturating_sub(used);
-        if rem > 0 {
-            spans.push(Span::styled(" ".repeat(rem), base));
+        if !after.is_empty() {
+            spans.push(Span::styled(after.to_string(), base));
         }
 
         f.render_widget(Paragraph::new(Line::from(spans)), area);
