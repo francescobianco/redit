@@ -53,6 +53,16 @@ _send() {
     eval "tmux send-keys -t '$SESSION' $*"
 }
 
+# ── Wait helpers ──────────────────────────────────────────────────────────────
+_wait_for_screen() {
+    local pattern="$1" timeout="${2:-15}" n=0
+    while ! tmux capture-pane -t "$SESSION" -p 2>/dev/null | grep -qF "$pattern"; do
+        sleep 0.5
+        n=$((n+1))
+        [[ $n -ge $((timeout * 2)) ]] && return 1
+    done
+}
+
 # ── Capture helpers ────────────────────────────────────────────────────────────
 _cap_text() {
     tmux capture-pane -t "$SESSION" -p | sed 's/[[:space:]]*$//'
@@ -94,14 +104,15 @@ _step() {
 
       # ── Setup ────────────────────────────────────────────────────────────────
       "the editor is open")
-          _start_editor; sleep 3 ;;
+          _start_editor; sleep 5 ;;
 
       "the editor is open with file \""*"\"")
           local f; f=$(sed 's/.*file "\(.*\)"/\1/' <<<"$text")
-          _start_editor "$f"; sleep 3 ;;
+          _start_editor "$f"; sleep 5 ;;
 
       "the welcome dialog is dismissed")
-          _send Escape; sleep 0.5 ;;
+          _wait_for_screen "MS-DOS Editor" 15 || true
+          _send Escape; sleep 1.5 ;;
 
       # ── Input ────────────────────────────────────────────────────────────────
       "I type \""*"\"")

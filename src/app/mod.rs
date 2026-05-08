@@ -855,127 +855,145 @@ impl App {
     }
 
     fn save_as_dialog(&self, f: &mut Frame, input: &str) {
+        // Compact centered modal matching original MS-DOS EDIT Save As dialog:
+        //   42 wide × 18 tall: file-name field box + Dirs/Drives list + OK/Cancel/Help
+        let area = Self::center_rect(f, 42, 18);
         let size = f.area();
-        let area = Rect::new(
-            0,
-            1.min(size.height),
-            size.width,
-            size.height.saturating_sub(2),
-        );
-        if area.width < 12 || area.height < 8 {
-            return;
-        }
         Self::render_shadow(f, area);
         f.render_widget(Clear, area);
 
-        let box_style = Style::default().bg(Color::Gray).fg(Color::Black);
-        let title_style = Style::default().bg(Color::White).fg(Color::Black);
-        let accel_style = Style::default().bg(Color::Gray).fg(Color::White);
-        let inner_w = area.width.saturating_sub(2) as usize;
+        let bs = Style::default().bg(Color::Gray).fg(Color::Black);
+        let ts = Style::default().bg(Color::White).fg(Color::Black);
+        let acs = Style::default().bg(Color::Gray).fg(Color::White);
 
+        let x = area.x;
+        let y = area.y;
+
+        // ── Title row ─────────────────────────────────────────────────────
         let title = " Save As ";
-        let side = inner_w.saturating_sub(title.len());
-        let left = side / 2;
-        let right = side - left;
-        let mut top = Vec::new();
-        top.push(Span::styled("┌", box_style));
-        top.push(Span::styled("─".repeat(left), box_style));
-        top.push(Span::styled(
-            format!("{:^w$}", title, w = title.len()),
-            title_style,
-        ));
-        top.push(Span::styled("─".repeat(right), box_style));
-        top.push(Span::styled("┐", box_style));
+        let dashes = 40usize.saturating_sub(title.len());
+        let ld = dashes / 2;
+        let rd = dashes - ld;
         f.render_widget(
-            Paragraph::new(Line::from(top)),
-            Rect::new(area.x, area.y, area.width, 1),
+            Paragraph::new(Line::from(vec![
+                Span::styled("┌", bs),
+                Span::styled("─".repeat(ld), bs),
+                Span::styled(title, ts),
+                Span::styled("─".repeat(rd), bs),
+                Span::styled("┐", bs),
+            ])),
+            Rect::new(x, y, 42, 1),
         );
 
-        for row in 1..area.height.saturating_sub(1) {
-            let y = area.y + row;
+        // ── Interior rows (fill with box_style blank) ──────────────────────
+        for row in 1u16..17 {
             f.render_widget(
-                Paragraph::new(Span::styled("│", box_style)),
-                Rect::new(area.x, y, 1, 1),
-            );
-            f.render_widget(
-                Paragraph::new(Span::styled(" ".repeat(inner_w), box_style)),
-                Rect::new(area.x + 1, y, inner_w as u16, 1),
-            );
-            f.render_widget(
-                Paragraph::new(Span::styled("│", box_style)),
-                Rect::new(area.x + area.width - 1, y, 1, 1),
+                Paragraph::new(Line::from(vec![
+                    Span::styled("│", bs),
+                    Span::styled(" ".repeat(40), bs),
+                    Span::styled("│", bs),
+                ])),
+                Rect::new(x, y + row, 42, 1),
             );
         }
+
+        // ── File Name field (box-within-box, inner width = 25) ─────────────
+        // Row 1: "            ┌─────────────────────────┐ "
         f.render_widget(
             Paragraph::new(Span::styled(
-                format!("└{}┘", "─".repeat(inner_w)),
-                box_style,
+                format!("            ┌{}┐ ", "─".repeat(25)),
+                bs,
             )),
-            Rect::new(area.x, area.y + area.height - 1, area.width, 1),
+            Rect::new(x + 1, y + 1, 40, 1),
         );
-
-        let label_x = area.x + ((area.width.saturating_sub(50)) / 2).max(4);
-        let field_w = inner_w.saturating_sub(18).min(32);
-        let field = format!("[{:<w$}]", input, w = field_w);
-        let mut file_line = Vec::new();
-        file_line.push(Span::styled("File ", box_style));
-        file_line.push(Span::styled("N", accel_style));
-        file_line.push(Span::styled("ame: ", box_style));
-        file_line.push(Span::styled(field, box_style));
+        // Row 2: " File Name: │<input>│ "
+        let field_content = format!("{:<25}", &input[..input.len().min(25)]);
         f.render_widget(
-            Paragraph::new(Line::from(file_line)),
-            Rect::new(label_x, area.y + 2, inner_w as u16 - 4, 1),
+            Paragraph::new(Line::from(vec![
+                Span::styled(" File ", bs),
+                Span::styled("N", acs),
+                Span::styled("ame: │", bs),
+                Span::styled(field_content, bs),
+                Span::styled("│ ", bs),
+            ])),
+            Rect::new(x + 1, y + 2, 40, 1),
+        );
+        // Row 3: "            └─────────────────────────┘ "
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("            └{}┘ ", "─".repeat(25)),
+                bs,
+            )),
+            Rect::new(x + 1, y + 3, 40, 1),
         );
 
+        // ── Current directory ──────────────────────────────────────────────
         let cwd = env::current_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| ".".to_string());
-        let cwd_text = Self::fit_text(&cwd, inner_w.saturating_sub(6));
         f.render_widget(
-            Paragraph::new(Span::styled(cwd_text, box_style)),
-            Rect::new(label_x, area.y + 4, inner_w as u16 - 4, 1),
+            Paragraph::new(Span::styled(
+                format!(" {:<39}", Self::fit_text(&cwd, 39)),
+                bs,
+            )),
+            Rect::new(x + 1, y + 4, 40, 1),
         );
 
-        let mut labels = Vec::new();
-        labels.push(Span::styled(" Existing ", box_style));
-        labels.push(Span::styled("F", accel_style));
-        labels.push(Span::styled("iles:         ", box_style));
-        labels.push(Span::styled("D", accel_style));
-        labels.push(Span::styled("irectories:", box_style));
+        // ── "Dirs/Drives" centered header ──────────────────────────────────
         f.render_widget(
-            Paragraph::new(Line::from(labels)),
-            Rect::new(label_x, area.y + 6, inner_w as u16 - 4, 1),
+            Paragraph::new(Span::styled(format!("{:^40}", "Dirs/Drives"), bs)),
+            Rect::new(x + 1, y + 5, 40, 1),
         );
 
-        let (files, dirs) = Self::dir_listing();
-        self.render_save_as_list(f, Rect::new(label_x, area.y + 7, 23, 11), &files);
-        self.render_save_as_list(f, Rect::new(label_x + 25, area.y + 7, 21, 11), &dirs);
-
-        self.render_dos_button(
-            f,
-            label_x + 2,
-            area.y + area.height - 3,
-            "►  OK  ◄",
-            None,
-            true,
+        // ── Dirs/Drives list box (16 wide, centered at offset +12) ─────────
+        let lx = x + 13; // 1 (border) + 12 (pad)
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(14)), bs)),
+            Rect::new(lx, y + 6, 16, 1),
         );
-        self.render_dos_button(
-            f,
-            label_x + 18,
-            area.y + area.height - 3,
-            "  Cancel  ",
-            None,
-            false,
-        );
-        self.render_dos_button(
-            f,
-            label_x + 35,
-            area.y + area.height - 3,
-            "  Help  ",
-            Some(2),
-            false,
+        let (_, dirs) = Self::dir_listing();
+        for i in 0u16..7 {
+            let entry = dirs.get(i as usize).map(String::as_str).unwrap_or("");
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    format!("│ {:<13}│", Self::fit_text(entry, 13)),
+                    bs,
+                )),
+                Rect::new(lx, y + 7 + i, 16, 1),
+            );
+        }
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(14)), bs)),
+            Rect::new(lx, y + 14, 16, 1),
         );
 
+        // ── Separator ─────────────────────────────────────────────────────
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("├{}┤", "─".repeat(40)), bs)),
+            Rect::new(x, y + 15, 42, 1),
+        );
+
+        // ── Buttons row ────────────────────────────────────────────────────
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("      ", bs),
+                Span::styled("< OK >", ts),
+                Span::styled("    ", bs),
+                Span::styled("< Cancel >", bs),
+                Span::styled("    ", bs),
+                Span::styled("< Help >", bs),
+                Span::styled("  ", bs),
+            ])),
+            Rect::new(x + 1, y + 16, 40, 1),
+        );
+
+        // ── Bottom border ──────────────────────────────────────────────────
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(40)), bs)),
+            Rect::new(x, y + 17, 42, 1),
+        );
+
+        // ── Status bar ────────────────────────────────────────────────────
         f.render_widget(
             Paragraph::new(Span::styled(
                 format!(
@@ -983,82 +1001,9 @@ impl App {
                     "F1=Help  Enter=Execute  Esc=Cancel  Tab=Next Field",
                     w = size.width as usize
                 ),
-                Style::default()
-                    .bg(self.theme.stat_bg)
-                    .fg(self.theme.stat_fg),
+                Style::default().bg(self.theme.stat_bg).fg(self.theme.stat_fg),
             )),
             Rect::new(0, size.height.saturating_sub(1), size.width, 1),
-        );
-    }
-
-    fn render_save_as_list(&self, f: &mut Frame, area: Rect, entries: &[String]) {
-        let style = Style::default().bg(Color::Gray).fg(Color::Black);
-        f.render_widget(
-            Paragraph::new(Span::styled(
-                format!("┌{}┐", "─".repeat(area.width as usize - 2)),
-                style,
-            )),
-            Rect::new(area.x, area.y, area.width, 1),
-        );
-        let rows = area.height.saturating_sub(2) as usize;
-        for i in 0..rows {
-            let text = entries.get(i).map(String::as_str).unwrap_or("");
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    format!(
-                        "│ {:<w$}│",
-                        Self::fit_text(text, area.width as usize - 4),
-                        w = area.width as usize - 3
-                    ),
-                    style,
-                )),
-                Rect::new(area.x, area.y + 1 + i as u16, area.width, 1),
-            );
-        }
-        f.render_widget(
-            Paragraph::new(Span::styled(
-                format!("└{}┘", "─".repeat(area.width as usize - 2)),
-                style,
-            )),
-            Rect::new(area.x, area.y + area.height - 1, area.width, 1),
-        );
-    }
-
-    fn render_dos_button(
-        &self,
-        f: &mut Frame,
-        x: u16,
-        y: u16,
-        label: &str,
-        accel: Option<usize>,
-        selected: bool,
-    ) {
-        let style = Style::default().bg(Color::White).fg(Color::Black);
-        let accel_style = Style::default().bg(Color::White).fg(Color::Red);
-        let shadow_style = Style::default().bg(Color::Gray).fg(Color::Black);
-        let mut spans = Vec::new();
-        for (i, ch) in label.chars().enumerate() {
-            spans.push(Span::styled(
-                ch.to_string(),
-                if accel == Some(i) { accel_style } else { style },
-            ));
-        }
-        f.render_widget(
-            Paragraph::new(Line::from(spans)),
-            Rect::new(x, y, label.chars().count() as u16, 1),
-        );
-        let shadow = if selected {
-            "▀▀▀▀▀▀▀▀"
-        } else {
-            "▀▀▀▀▀▀▀▀▀▀"
-        };
-        f.render_widget(
-            Paragraph::new(Span::styled(shadow, shadow_style)),
-            Rect::new(x + 1, y + 1, shadow.len() as u16, 1),
-        );
-        f.render_widget(
-            Paragraph::new(Span::styled("▄", shadow_style)),
-            Rect::new(x + label.chars().count() as u16, y, 1, 1),
         );
     }
 
