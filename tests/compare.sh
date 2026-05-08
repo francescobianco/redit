@@ -38,6 +38,16 @@ echo -e "${B}Diffing captures …${N}"
 
 TEXT_DIFFS=0; COLOR_DIFFS=0; MATCHES=0; MISSING=0
 
+if [[ $# -eq 0 ]]; then
+    diff_roots=("$CAPTURES/original-v1")
+else
+    diff_roots=()
+    for feat in "${features[@]}"; do
+        name=$(basename "$feat" .feature)
+        diff_roots+=("$CAPTURES/original-v1/$name")
+    done
+fi
+
 while IFS= read -r orig_file; do
     rel="${orig_file#"$CAPTURES/original-v1/"}"
     clone_file="$CAPTURES/clone-v1/$rel"
@@ -58,22 +68,24 @@ while IFS= read -r orig_file; do
             --label original-v1 --label clone-v1 -u | head -30 | sed 's/^/    /'
         TEXT_DIFFS=$((TEXT_DIFFS+1))
     elif [[ "$ext" == "ansi" ]]; then
-        orig_colors=$(grep -oP '\x1b\[[0-9;]*m' "$orig_file" | sort | uniq -c | sort -rn | head -10)
-        clone_colors=$(grep -oP '\x1b\[[0-9;]*m' "$clone_file" | sort | uniq -c | sort -rn | head -10)
+        orig_colors=$(grep -oP '\x1b\[[0-9;]*m' "$orig_file" 2>/dev/null | sort | uniq -c | sort -rn | head -10 || true)
+        clone_colors=$(grep -oP '\x1b\[[0-9;]*m' "$clone_file" 2>/dev/null | sort | uniq -c | sort -rn | head -10 || true)
         if [[ "$orig_colors" != "$clone_colors" ]]; then
             echo -e "  ${Y}COLOR DIFF${N}  ${DIM}${rel%.ansi}.txt${N}"
             echo "    original-v1 top SGR codes:"
-            grep -oP '\x1b\[[0-9;]*m' "$orig_file" | sort | uniq -c | sort -rn | head -5 \
+            (grep -oP '\x1b\[[0-9;]*m' "$orig_file" 2>/dev/null || true) \
+                | sort | uniq -c | sort -rn | head -5 \
                 | sed "s/^ */    /" | sed 's/\x1b\[/ESC[/g'
             echo "    clone-v1 top SGR codes:"
-            grep -oP '\x1b\[[0-9;]*m' "$clone_file" | sort | uniq -c | sort -rn | head -5 \
+            (grep -oP '\x1b\[[0-9;]*m' "$clone_file" 2>/dev/null || true) \
+                | sort | uniq -c | sort -rn | head -5 \
                 | sed "s/^ */    /" | sed 's/\x1b\[/ESC[/g'
             COLOR_DIFFS=$((COLOR_DIFFS+1))
         else
             MATCHES=$((MATCHES+1))
         fi
     fi
-done < <(find "$CAPTURES/original-v1" -type f | sort)
+done < <(find "${diff_roots[@]}" -type f 2>/dev/null | sort)
 
 echo ""
 TOTAL_DIFFS=$((TEXT_DIFFS + COLOR_DIFFS + MISSING))

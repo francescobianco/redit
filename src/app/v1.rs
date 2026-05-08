@@ -19,6 +19,7 @@ impl App {
         let frame_style = Style::default().bg(t.frame_bg).fg(t.frame_fg);
         let side_style = Style::default().bg(t.edit_bg).fg(t.frame_fg);
         let title_style = Style::default().bg(t.title_bg).fg(t.title_fg);
+        let inactive_title_style = Style::default().bg(t.frame_bg).fg(t.frame_fg);
         let scroll_style = Style::default().bg(t.scroll_bg).fg(t.scroll_fg);
         let base = Style::default().bg(t.edit_bg).fg(t.edit_fg);
         let cur_style = Style::default().bg(t.edit_fg).fg(t.edit_bg);
@@ -42,7 +43,12 @@ impl App {
         let mut top_spans: Vec<Span> = Vec::new();
         top_spans.push(Span::styled("┌", frame_style));
         top_spans.push(Span::styled("─".repeat(left_d), frame_style));
-        top_spans.push(Span::styled(title_inner, title_style));
+        let file_title_style = if self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false) {
+            inactive_title_style
+        } else {
+            title_style
+        };
+        top_spans.push(Span::styled(title_inner, file_title_style));
         top_spans.push(Span::styled("─".repeat(right_d), frame_style));
         top_spans.push(Span::styled("┐", frame_style));
         f.render_widget(
@@ -114,7 +120,7 @@ impl App {
 
         // ── Horizontal scrollbar (last row of edit area) ──────────────────────
         let hscroll_y = area.y + area.height - 1;
-        let track_w = w.saturating_sub(5); // space after left arrow, then track
+        let track_w = w.saturating_sub(4);
         let max_line_w = self
             .editor
             .lines
@@ -125,7 +131,8 @@ impl App {
         let h_thumb = Self::hscroll_thumb(sx, text_w, max_line_w, track_w);
 
         let mut hbar: Vec<Span> = Vec::new();
-        hbar.push(Span::styled("│← ", scroll_style));
+        hbar.push(Span::styled("│", side_style));
+        hbar.push(Span::styled("←", scroll_style));
         for i in 0..track_w {
             let ch = if h_thumb.1 > 0 && i >= h_thumb.0 && i < h_thumb.0 + h_thumb.1 {
                 "█"
@@ -134,7 +141,8 @@ impl App {
             };
             hbar.push(Span::styled(ch, scroll_style));
         }
-        hbar.push(Span::styled("→│", scroll_style));
+        hbar.push(Span::styled("→", scroll_style));
+        hbar.push(Span::styled("│", side_style));
         f.render_widget(
             Paragraph::new(Line::from(hbar)),
             Rect::new(area.x, hscroll_y, area.width, 1),

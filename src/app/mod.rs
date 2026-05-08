@@ -273,10 +273,24 @@ impl App {
             match event::read()? {
                 Event::Key(k) => {
                     // When terminal pane is focused, forward all input to the PTY
-                    // except Ctrl+T which toggles focus back to the editor
+                    // except editor-level shortcuts which must remain available.
                     if self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false) {
                         let ctrl = k.modifiers == KeyModifiers::CONTROL;
-                        if k.code == KeyCode::Char('t') && ctrl {
+                        let alt_menu = matches!(
+                            k.code,
+                            KeyCode::Modifier(ModifierKeyCode::LeftAlt | ModifierKeyCode::RightAlt)
+                                | KeyCode::Char('f' | 'F' | 'e' | 'E' | 's' | 'S' | 'o' | 'O' | 'h' | 'H')
+                                if k.modifiers.contains(KeyModifiers::ALT)
+                                    || matches!(k.code, KeyCode::Modifier(_))
+                        );
+                        if alt_menu {
+                            if let Some(tp) = &mut self.term_pane {
+                                tp.focused = false;
+                            }
+                            if self.handle_key(k) {
+                                break;
+                            }
+                        } else if k.code == KeyCode::Char('t') && ctrl {
                             if let Some(tp) = &mut self.term_pane {
                                 tp.focused = false;
                             }
@@ -300,6 +314,15 @@ impl App {
                         break;
                     }
                 }
+                Event::Paste(text) => {
+                    if self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false) {
+                        if let Some(tp) = &mut self.term_pane {
+                            tp.write_input(text.as_bytes());
+                        }
+                    } else {
+                        self.handle_paste(&text);
+                    }
+                }
                 Event::Mouse(m) => self.handle_mouse(m),
                 Event::Resize(w, h) => {
                     self.page_height = h.saturating_sub(4) as usize;
@@ -312,6 +335,27 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn handle_paste(&mut self, text: &str) {
+        match &mut self.mode {
+            Mode::Normal => {
+                self.editor.delete_selection();
+                self.editor.paste_text(text);
+            }
+            Mode::Open(s) | Mode::SaveAs(s) | Mode::Find(s) | Mode::Goto(s) => {
+                s.push_str(&text.replace(['\r', '\n'], ""));
+            }
+            Mode::Replace { find, replace, focus } => {
+                let text = text.replace(['\r', '\n'], "");
+                if *focus == 0 {
+                    find.push_str(&text);
+                } else {
+                    replace.push_str(&text);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn forward_key_to_term(&mut self, key: KeyEvent) {
@@ -363,9 +407,10 @@ impl App {
         if self.term_pane.is_some() {
             let term_area = Rect::new(0, 1 + edit_h, size.width, term_h);
             let border_style = Style::default().bg(self.theme.frame_bg).fg(self.theme.frame_fg);
+            let title_style  = Style::default().bg(self.theme.title_bg).fg(self.theme.title_fg);
             let inner_bg     = Style::default().bg(self.theme.edit_bg).fg(self.theme.edit_fg);
             let tp = self.term_pane.as_mut().unwrap();
-            tp.render(f, term_area, border_style, inner_bg);
+            tp.render(f, term_area, border_style, title_style, inner_bg);
 
             // Place the real blinking cursor at the terminal's cursor position
             if tp.focused {
@@ -753,9 +798,16 @@ impl App {
             } else if matches!(self.mode, Mode::ConfirmNew | Mode::ConfirmExit) {
                 " F1=Help   Enter=Execute   Esc=Cancel   Tab=Next Field   Arrow=Next Item"
                     .to_string()
+            } else if matches!(self.mode, Mode::Open(_) | Mode::SaveAs(_)) {
+                " F1=Help   Enter=Execute   Esc=Cancel   Tab=Next Field   Arrow=Next Item"
+                    .to_string()
             } else if let Mode::Menu { menu, item } = self.mode {
                 let help = MENU_ITEMS[menu][item].help;
                 format!(" F1=Help │ {}", help)
+            } else if self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false) {
+                " Ctrl+T=Unfocus   Ctrl+Up/Dn=Resize".to_string()
+            } else if self.term_pane.is_some() {
+                " Ctrl+T=Focus Terminal".to_string()
             } else if let Some(m) = &self.message {
                 format!(" {}", m)
             } else {
@@ -763,7 +815,7 @@ impl App {
             };
             if matches!(
                 self.mode,
-                Mode::Welcome | Mode::ConfirmNew | Mode::ConfirmExit
+                Mode::Welcome | Mode::ConfirmNew | Mode::ConfirmExit | Mode::Open(_) | Mode::SaveAs(_)
             ) {
                 f.render_widget(
                     Paragraph::new(Span::styled(
@@ -795,6 +847,12 @@ impl App {
             format!(" {}", dbg)
         } else if self.mode == Mode::Welcome {
             format!(" F1=Help   Enter=Execute   Esc=Cancel")
+        } else if matches!(self.mode, Mode::Open(_) | Mode::SaveAs(_)) {
+            format!(" F1=Help   Enter=Execute   Esc=Cancel   Tab=Next Field   Arrow=Next Item")
+        } else if self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false) {
+            format!(" Ctrl+T=Unfocus   Ctrl+Up/Dn=Resize")
+        } else if self.term_pane.is_some() {
+            format!(" Ctrl+T=Focus Terminal")
         } else if let Some(m) = &self.message {
             format!(" {}", m)
         } else if self.theme.version == Version::V1 {
@@ -827,7 +885,7 @@ impl App {
     fn render_dialog(&self, f: &mut Frame, mode: &Mode) {
         match mode {
             Mode::Welcome => self.welcome_dialog(f),
-            Mode::Open(s) => self.input_dialog(f, "Open", "File Name:", s),
+            Mode::Open(s) => self.open_dialog(f, s),
             Mode::SaveAs(s) => self.save_as_dialog(f, s),
             Mode::Find(s) => self.input_dialog(f, "Find", "Find What:", s),
             Mode::Goto(s) => self.input_dialog(f, "Go To Line", "Line Number:", s),
@@ -926,6 +984,180 @@ impl App {
         );
         self.btn(f, inner.x + 1, inner.y + 4, "[ OK ]");
         self.btn(f, inner.x + 9, inner.y + 4, "[ Cancel ]");
+    }
+
+    fn open_dialog(&self, f: &mut Frame, input: &str) {
+        if self.theme.version != Version::V1 {
+            self.input_dialog(f, "Open", "File Name:", input);
+            return;
+        }
+
+        let area = Self::center_rect(f, 69, 20);
+        Self::render_shadow(f, area);
+        f.render_widget(Clear, area);
+
+        let bs = Style::default().bg(Color::Gray).fg(Color::Black);
+        let ts = Style::default().bg(Color::White).fg(Color::Black);
+        let acs = Style::default().bg(Color::Gray).fg(Color::White);
+        let input_s = Style::default().bg(Color::White).fg(Color::Black);
+        let scroll_s = Style::default().bg(Color::Gray).fg(Color::Black);
+
+        let x = area.x;
+        let y = area.y;
+        let iw = area.width.saturating_sub(2) as usize;
+
+        let title = " Open ";
+        let dashes = iw.saturating_sub(title.len());
+        let ld = dashes / 2;
+        let rd = dashes - ld;
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("┌", bs),
+                Span::styled("─".repeat(ld), bs),
+                Span::styled(title, ts),
+                Span::styled("─".repeat(rd), bs),
+                Span::styled("┐", bs),
+            ])),
+            Rect::new(x, y, area.width, 1),
+        );
+
+        for row in 1u16..area.height.saturating_sub(1) {
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("│", bs),
+                    Span::styled(" ".repeat(iw), bs),
+                    Span::styled("│", bs),
+                ])),
+                Rect::new(x, y + row, area.width, 1),
+            );
+        }
+
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("            ┌{}┐ ", "─".repeat(50)),
+                bs,
+            )),
+            Rect::new(x + 1, y + 1, iw as u16, 1),
+        );
+
+        let field = Self::fit_text(input, 50);
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" File ", bs),
+                Span::styled("N", acs),
+                Span::styled("ame: │", bs),
+                Span::styled(format!("{:<50}", field), input_s),
+                Span::styled("│ ", bs),
+            ])),
+            Rect::new(x + 1, y + 2, iw as u16, 1),
+        );
+
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("            └{}┘ ", "─".repeat(50)),
+                bs,
+            )),
+            Rect::new(x + 1, y + 3, iw as u16, 1),
+        );
+
+        let cwd = env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+        f.render_widget(
+            Paragraph::new(Span::styled(format!(" {:<66}", Self::fit_text(&cwd, 66)), bs)),
+            Rect::new(x + 1, y + 4, iw as u16, 1),
+        );
+
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!("{:^45}", "Files"), bs),
+                Span::styled(" ", bs),
+                Span::styled(format!("{:^14}", "Dirs/Drives"), bs),
+            ])),
+            Rect::new(x + 1, y + 5, iw as u16, 1),
+        );
+
+        let files_x = x + 2;
+        let dirs_x = x + 49;
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(43)), bs)),
+            Rect::new(files_x, y + 6, 45, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(14)), bs)),
+            Rect::new(dirs_x, y + 6, 16, 1),
+        );
+
+        let (files, dirs) = Self::dir_listing();
+        for i in 0u16..8 {
+            let file = files.get(i as usize).map(String::as_str).unwrap_or("");
+            f.render_widget(
+                Paragraph::new(Span::styled(format!("│ {:<42}│", Self::fit_text(file, 42)), bs)),
+                Rect::new(files_x, y + 7 + i, 45, 1),
+            );
+
+            let dir = dirs.get(i as usize).map(String::as_str).unwrap_or("");
+            let sc = if i == 0 {
+                "↑"
+            } else if i == 7 {
+                "↓"
+            } else {
+                "░"
+            };
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("│ ", bs),
+                    Span::styled(format!("{:<11}", Self::fit_text(dir, 11)), bs),
+                    Span::styled(sc, scroll_s),
+                    Span::styled(" │", bs),
+                ])),
+                Rect::new(dirs_x, y + 7 + i, 16, 1),
+            );
+        }
+
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("└", bs),
+                Span::styled("←", bs),
+                Span::styled("░".repeat(41), scroll_s),
+                Span::styled("→", bs),
+                Span::styled("┘", bs),
+            ])),
+            Rect::new(files_x, y + 15, 45, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(14)), bs)),
+            Rect::new(dirs_x, y + 15, 16, 1),
+        );
+
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("├{}┤", "─".repeat(iw)), bs)),
+            Rect::new(x, y + 17, area.width, 1),
+        );
+
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("           ", bs),
+                Span::styled("<", acs),
+                Span::styled(" OK ", bs),
+                Span::styled(">", acs),
+                Span::styled("          ", bs),
+                Span::styled("<", acs),
+                Span::styled(" Cancel ", bs),
+                Span::styled(">", acs),
+                Span::styled("          ", bs),
+                Span::styled("<", acs),
+                Span::styled(" Help ", bs),
+                Span::styled(">", acs),
+                Span::styled("          ", bs),
+            ])),
+            Rect::new(x + 1, y + 18, iw as u16, 1),
+        );
+
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(iw)), bs)),
+            Rect::new(x, y + 19, area.width, 1),
+        );
     }
 
     fn save_as_dialog(&self, f: &mut Frame, input: &str) {
@@ -1952,6 +2184,9 @@ impl App {
             KeyCode::Modifier(ModifierKeyCode::LeftAlt | ModifierKeyCode::RightAlt) => {
                 self.mode = Mode::Menu { menu: 0, item: 0 };
             }
+            KeyCode::F(10) => {
+                self.mode = Mode::Menu { menu: 0, item: 0 };
+            }
             KeyCode::Char('f') | KeyCode::Char('F') if m.contains(KeyModifiers::ALT) => {
                 self.mode = Mode::Menu { menu: 0, item: 0 };
             }
@@ -2193,7 +2428,7 @@ impl App {
         match (mi, ii) {
             (0, 0) => self.do_new(),
             (0, 1) => {
-                self.mode = Mode::Open(String::new());
+                self.mode = Mode::Open("*.TXT".to_string());
             }
             (0, 2) => self.do_save(),
             (0, 3) => {

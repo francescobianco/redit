@@ -116,7 +116,12 @@ _step() {
 
       "the welcome dialog is dismissed")
           _wait_for_screen "MS-DOS Editor" 15 || true
-          _send Escape; sleep 1.5 ;;
+          if [[ "$TARGET" == "original" ]]; then
+              _send Tab Enter
+          else
+              _send Escape
+          fi
+          sleep 1.5 ;;
 
       # ── Input ────────────────────────────────────────────────────────────────
       "I type \""*"\"")

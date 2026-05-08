@@ -78,7 +78,7 @@ compare-feature:
 # ── Misc ─────────────────────────────────────────────────────────────────────
 
 install:
-	cargo install --path .
+	@cargo install --path .
 
 push:
 	@git add .

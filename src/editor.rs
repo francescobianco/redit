@@ -280,13 +280,15 @@ impl Editor {
         };
         if sy == ey {
             let chars: Vec<char> = self.lines[sy].chars().collect();
-            chars[sx..ex.min(chars.len())].iter().collect()
+            let start = sx.min(chars.len());
+            let end = ex.min(chars.len());
+            chars[start..end].iter().collect()
         } else {
             let mut result = String::new();
             for y in sy..=ey {
                 let chars: Vec<char> = self.lines[y].chars().collect();
                 if y == sy {
-                    result.extend(chars[sx..].iter());
+                    result.extend(chars[sx.min(chars.len())..].iter());
                     result.push('\n');
                 } else if y == ey {
                     result.extend(chars[..ex.min(chars.len())].iter());
@@ -311,19 +313,22 @@ impl Editor {
         };
         if sy == ey {
             let chars: Vec<char> = self.lines[sy].chars().collect();
-            let new_line: String = chars[..sx]
+            let start = sx.min(chars.len());
+            let end = ex.min(chars.len());
+            let new_line: String = chars[..start]
                 .iter()
-                .chain(chars[ex.min(chars.len())..].iter())
+                .chain(chars[end..].iter())
                 .collect();
             self.lines[sy] = new_line;
         } else {
             let end_chars: Vec<char> = self.lines[ey].chars().collect();
             let end_tail: String = end_chars[ex.min(end_chars.len())..].iter().collect();
             let start_chars: Vec<char> = self.lines[sy].chars().collect();
-            self.lines[sy] = start_chars[..sx].iter().collect::<String>() + &end_tail;
+            self.lines[sy] =
+                start_chars[..sx.min(start_chars.len())].iter().collect::<String>() + &end_tail;
             self.lines.drain(sy + 1..=ey);
         }
-        self.cursor = (sx, sy);
+        self.cursor = (sx.min(self.lines[sy].chars().count()), sy);
         self.selection_anchor = None;
         self.dirty = true;
         self.highlight();
@@ -361,16 +366,42 @@ impl Editor {
     }
 
     pub fn paste(&mut self) {
+        let clip = self.clip.clone();
+        self.paste_text(&clip);
+    }
+
+    pub fn paste_text(&mut self, text: &str) {
         let (x, y) = self.cursor;
-        if y < self.lines.len() && !self.clip.is_empty() {
-            let line = &mut self.lines[y];
-            let byte_idx = line
+        if y < self.lines.len() && !text.is_empty() {
+            let clip = text.replace("\r\n", "\n").replace('\r', "\n");
+            let line_len = self.lines[y].chars().count();
+            let x = x.min(line_len);
+            let byte_idx = self.lines[y]
                 .char_indices()
                 .nth(x)
                 .map(|(i, _)| i)
-                .unwrap_or(line.len());
-            line.insert_str(byte_idx, &self.clip);
-            self.cursor.0 += self.clip.chars().count();
+                .unwrap_or(self.lines[y].len());
+            if !clip.contains('\n') {
+                self.lines[y].insert_str(byte_idx, &clip);
+                self.cursor.0 = x + clip.chars().count();
+            } else {
+                let parts: Vec<&str> = clip.split('\n').collect();
+                let tail = {
+                    let line = &mut self.lines[y];
+                    let tail = line.split_off(byte_idx);
+                    line.push_str(parts[0]);
+                    tail
+                };
+                let last_idx = parts.len() - 1;
+                let mut insert_at = y + 1;
+                for part in &parts[1..last_idx] {
+                    self.lines.insert(insert_at, (*part).to_string());
+                    insert_at += 1;
+                }
+                self.lines.insert(insert_at, parts[last_idx].to_string() + &tail);
+                self.cursor.1 = insert_at;
+                self.cursor.0 = parts[last_idx].chars().count();
+            }
             self.dirty = true;
             self.highlight();
         }
@@ -401,5 +432,36 @@ impl Editor {
                 Line::from(spans)
             })
             .collect();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Editor;
+
+    #[test]
+    fn paste_multiline_splits_lines_and_keeps_cursor_on_inserted_text() {
+        let mut editor = Editor::new();
+        editor.lines = vec!["alpha beta".to_string()];
+        editor.cursor = (6, 0);
+        editor.clip = "one\ntwo".to_string();
+
+        editor.paste();
+
+        assert_eq!(editor.lines, vec!["alpha one", "twobeta"]);
+        assert_eq!(editor.cursor, (3, 1));
+    }
+
+    #[test]
+    fn paste_normalizes_crlf_clipboard_text() {
+        let mut editor = Editor::new();
+        editor.lines = vec!["tail".to_string()];
+        editor.cursor = (0, 0);
+        editor.clip = "a\r\nb".to_string();
+
+        editor.paste();
+
+        assert_eq!(editor.lines, vec!["a", "btail"]);
+        assert_eq!(editor.cursor, (1, 1));
     }
 }

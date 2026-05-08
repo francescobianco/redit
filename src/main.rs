@@ -1,6 +1,6 @@
 use crossterm::{
     event::{
-        DisableMouseCapture, EnableMouseCapture,
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
         KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
@@ -21,13 +21,23 @@ fn main() -> io::Result<()> {
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            DisableBracketedPaste,
+        );
         original_hook(info);
     }));
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste,
+    )?;
     // Best-effort: enables reporting of bare modifier key presses (bare Alt).
     // Silently ignored on terminals that don't support the kitty keyboard protocol.
     let _ = execute!(
@@ -48,6 +58,7 @@ fn main() -> io::Result<()> {
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture,
+        DisableBracketedPaste,
         PopKeyboardEnhancementFlags,
     )?;
     terminal.show_cursor()?;

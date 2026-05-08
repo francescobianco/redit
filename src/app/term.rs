@@ -124,31 +124,30 @@ impl TermPane {
         area: Rect,
         // Theme-derived styles so the pane matches the editor appearance
         border_style: Style, // used for ├ ─ ┤ │ characters
+        title_style: Style,  // active title highlight
         inner_bg: Style,     // edit area background for empty cells
     ) {
         self.drain();
         let screen = self.parser.screen();
 
         // ── Separator with ├ label ┤ connectors ──────────────────────────────
-        let label = if self.focused {
-            " Terminal (Ctrl+T: unfocus  Ctrl+Up/Dn: resize) "
-        } else {
-            " Terminal (Ctrl+T: focus) "
-        };
+        let label = " Terminal ";
         // Use display-width (not byte length) so multi-byte chars (↑ ↓) are counted correctly
         let label_w = UnicodeWidthStr::width(label);
         let inner_w = area.width.saturating_sub(2) as usize; // between ├ and ┤
         let dashes   = inner_w.saturating_sub(label_w);
         let left_d   = dashes / 2;
         let right_d  = dashes - left_d;
-        let sep_line = format!(
-            "├{}{}{}┤",
-            "─".repeat(left_d),
-            label,
-            "─".repeat(right_d),
-        );
+        let label_style = if self.focused { title_style } else { border_style };
+        let sep_line = Line::from(vec![
+            Span::styled("├", border_style),
+            Span::styled("─".repeat(left_d), border_style),
+            Span::styled(label, label_style),
+            Span::styled("─".repeat(right_d), border_style),
+            Span::styled("┤", border_style),
+        ]);
         f.render_widget(
-            Paragraph::new(Span::styled(sep_line, border_style)),
+            Paragraph::new(sep_line),
             Rect::new(area.x, area.y, area.width, 1),
         );
 
@@ -203,4 +202,3 @@ impl TermPane {
         }
     }
 }
-
