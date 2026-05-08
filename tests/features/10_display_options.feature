@@ -1,38 +1,36 @@
 Feature: Display options
-  Options → Display opens the color/style dialog with foreground, background, and options.
+  Options → Display opens a dialog to choose foreground color, background color,
+  scroll bar visibility, and tab stop width.
 
   Background:
-    Given both editors are started fresh
-    When I send "Escape" to both
-    And I wait for the editors to settle
-
-  Scenario: Options menu opens with Alt+O
-    When I send "M-o" to both
-    And I wait for the editors to settle
-    Then the screen text matches
+    Given the editor is open
+    When the welcome dialog is dismissed
 
   Scenario: Display dialog opens from Options menu
-    When I send "M-o Enter" to both
-    And I wait for the editors to settle
-    Then the clone screen contains "Display"
+    When I press M-o
+    And I press Enter
+    And I wait for the editor to settle
+    Then the screen shows "Display"
+    And the screen is captured
 
-  Scenario: Display dialog shows color sections
-    When I send "M-o Enter" to both
-    And I wait for the editors to settle
-    Then the clone screen contains "Foreground"
-    And the clone screen contains "Background"
+  Scenario: Display dialog contains color sections
+    When I press M-o
+    And I press Enter
+    And I wait for the editor to settle
+    Then the screen shows "Foreground"
+    And the screen shows "Background"
 
-  Scenario: Display dialog shows scroll bars option
-    When I send "M-o Enter" to both
-    And I wait for the editors to settle
-    Then the clone screen contains "Scroll Bars"
-
-  Scenario: Display dialog shows tab stops option
-    When I send "M-o Enter" to both
-    And I wait for the editors to settle
-    Then the clone screen contains "Tab Stops"
+  Scenario: Display dialog contains display options
+    When I press M-o
+    And I press Enter
+    And I wait for the editor to settle
+    Then the screen shows "Scroll Bars"
+    And the screen shows "Tab Stops"
 
   Scenario: Display dialog closes with Escape
-    When I send "M-o Enter Escape" to both
-    And I wait for the editors to settle
-    Then the clone screen does not contain "Foreground"
+    When I press M-o
+    And I press Enter
+    And I press Escape
+    And I wait for the editor to settle
+    Then the screen does not show "Foreground"
+    And the screen is captured

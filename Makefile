@@ -51,21 +51,25 @@ diff-screens:
 
 # ── Gherkin test suite ────────────────────────────────────────────────────────
 
-# Run all feature files against golden snapshots
+# Run all features against the clone, assert behavioral steps
 test:
-	@bash tests/run.sh tests/features/*.feature
+	@EDITOR_TARGET=clone bash tests/run.sh tests/features/*.feature
 
-# Run a single feature file  (usage: make test-feature FEATURE=04_file_menu)
+# Run a single feature  (usage: make test-feature FEATURE=04_file_menu)
 test-feature:
-	@bash tests/run.sh tests/features/$(FEATURE).feature
+	@EDITOR_TARGET=clone bash tests/run.sh tests/features/$(FEATURE).feature
 
-# Record golden snapshots from dosemu (run once, then commit snapshots/)
-snapshot:
-	@SNAPSHOT_MODE=record bash tests/run.sh tests/features/*.feature
+# Run all features against the original MS-DOS EDIT
+test-original:
+	@EDITOR_TARGET=original bash tests/run.sh tests/features/*.feature
 
-# Record golden for a single feature
-snapshot-feature:
-	@SNAPSHOT_MODE=record bash tests/run.sh tests/features/$(FEATURE).feature
+# Run both and diff captures: the full conformance check
+compare:
+	@bash tests/compare.sh tests/features/*.feature
+
+# Compare a single feature
+compare-feature:
+	@bash tests/compare.sh tests/features/$(FEATURE).feature
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 

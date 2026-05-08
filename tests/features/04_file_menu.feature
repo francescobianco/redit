@@ -1,42 +1,41 @@
 Feature: File menu
-  The File menu opens with Alt+F, shows correct items, and keyboard navigation works.
+  The File menu opens with Alt+F and contains New, Open, Save, Save As,
+  Print, and Exit. Keyboard navigation updates the status bar help text.
 
   Background:
-    Given both editors are started fresh
-    When I send "Escape" to both
-    And I wait for the editors to settle
+    Given the editor is open
+    When the welcome dialog is dismissed
 
   Scenario: File menu opens with Alt+F
-    When I send "M-f" to both
-    And I wait for the editors to settle
-    Then the screen text matches
+    When I press M-f
+    And I wait for the editor to settle
+    Then the screen shows "New"
+    And the screen shows "Open..."
+    And the screen shows "Save"
+    And the screen shows "Save As..."
+    And the screen shows "Print..."
+    And the screen shows "Exit"
+    And the screen is captured
 
-  Scenario: File menu contains expected items
-    When I send "M-f" to both
-    And I wait for the editors to settle
-    Then the clone screen contains "New"
-    And the clone screen contains "Open..."
-    And the clone screen contains "Save"
-    And the clone screen contains "Save As..."
-    And the clone screen contains "Print..."
-    And the clone screen contains "Exit"
+  Scenario: Status bar shows help for the highlighted item
+    When I press M-f
+    And I wait for the editor to settle
+    Then the status bar shows "Removes currently loaded file from memory"
+
+  Scenario: Down arrow selects next item and updates status bar
+    When I press M-f
+    And I press Down
+    And I wait for the editor to settle
+    Then the status bar shows "Opens a file"
+    And the screen is captured
 
   Scenario: File menu closes with Escape
-    When I send "M-f Escape" to both
-    And I wait for the editors to settle
-    Then the clone screen does not contain "Save As..."
+    When I press M-f
+    And I press Escape
+    And I wait for the editor to settle
+    Then the screen does not show "Save As..."
 
-  Scenario: Down arrow navigates menu items
-    When I send "M-f Down Down" to both
-    And I wait for the editors to settle
-    Then the screen text matches
-
-  Scenario: Status bar shows help text for highlighted item
-    When I send "M-f" to both
-    And I wait for the editors to settle
-    Then the clone screen contains "Removes currently loaded file from memory"
-
-  Scenario: F2 saves without opening menu
-    When I send "abc F2" to both
-    And I wait for the editors to settle
-    Then the screen text matches
+  Scenario: F2 saves the file
+    When I press F2
+    And I wait for the editor to settle
+    Then the screen is captured

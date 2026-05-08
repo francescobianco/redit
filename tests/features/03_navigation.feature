@@ -1,60 +1,70 @@
 Feature: Cursor navigation
-  Arrow keys, Home, End, Ctrl+Home, Ctrl+End, PgUp, PgDn, and word movement.
+  Arrow keys, Home, End, Ctrl combinations, and Page Up/Down move the cursor.
 
   Background:
-    Given both editors are started fresh
-    When I send "Escape" to both
-    And I wait for the editors to settle
+    Given the editor is open
+    When the welcome dialog is dismissed
+    And I type "first line"
+    And I press Enter
+    And I type "second line"
+    And I press Enter
+    And I type "third line"
+    And I wait for the editor to settle
 
-  Scenario: Arrow keys move the cursor
-    When I send "abc Enter def Enter ghi" to both
-    And I send "Up Left Left" to both
-    And I wait for the editors to settle
-    Then the screen text matches
+  Scenario: Left arrow moves cursor back one column
+    When I press Left
+    Then the cursor is at line 3 column 9
+
+  Scenario: Right arrow moves cursor forward one column
+    When I press Home
+    And I press Right
+    Then the cursor is at line 3 column 2
+
+  Scenario: Up arrow moves to previous line
+    When I press Up
+    Then the cursor is at line 2 column 10
+
+  Scenario: Down arrow moves to next line
+    When I press Up
+    And I press Down
+    Then the cursor is at line 3 column 10
 
   Scenario: Home key moves to start of line
-    When I send "hello" to both
-    And I send "Home" to both
-    And I wait for the editors to settle
-    Then the clone shows "00001:001" on line 25
+    When I press Home
+    Then the cursor is at line 3 column 1
 
   Scenario: End key moves to end of line
-    When I send "hello Home End" to both
-    And I wait for the editors to settle
-    Then the clone shows "00001:006" on line 25
+    When I press Home
+    And I press End
+    Then the cursor is at line 3 column 11
 
   Scenario: Ctrl+Home moves to start of document
-    When I send "abc Enter def Enter ghi" to both
-    And I send "C-Home" to both
-    And I wait for the editors to settle
-    Then the clone shows "00001:001" on line 25
+    When I press C-Home
+    Then the cursor is at line 1 column 1
 
   Scenario: Ctrl+End moves to end of document
-    When I send "abc Enter def Enter ghi" to both
-    And I send "C-Home C-End" to both
-    And I wait for the editors to settle
-    Then the clone shows "00003:004" on line 25
+    When I press C-Home
+    And I press C-End
+    Then the cursor is at line 3 column 11
 
-  Scenario: Ctrl+Right moves one word right
-    When I send "hello world" to both
-    And I send "Home C-Right" to both
-    And I wait for the editors to settle
-    Then the clone shows "00001:006" on line 25
+  Scenario: Ctrl+Right jumps to next word
+    When I press C-Home
+    And I press C-Right
+    Then the cursor is at line 1 column 6
 
-  Scenario: Ctrl+Left moves one word left
-    When I send "hello world" to both
-    And I send "C-Left" to both
-    And I wait for the editors to settle
-    Then the clone shows "00001:007" on line 25
+  Scenario: Ctrl+Left jumps to previous word
+    When I press C-Left
+    Then the cursor is at line 3 column 7
 
-  Scenario: PgDn scrolls down
-    When I send "abc" to both
-    And I send "PgDn" to both
-    And I wait for the editors to settle
-    Then the screen text matches
+  Scenario: Page Down scrolls the view
+    When I press C-Home
+    And I press PgDn
+    And I wait for the editor to settle
+    Then the screen is captured
 
-  Scenario: PgUp scrolls up
-    When I send "abc" to both
-    And I send "PgDn PgUp" to both
-    And I wait for the editors to settle
-    Then the screen text matches
+  Scenario: Page Up scrolls back up
+    When I press C-Home
+    And I press PgDn
+    And I press PgUp
+    And I wait for the editor to settle
+    Then the screen is captured
