@@ -5,14 +5,15 @@ use ratatui::{
     Frame, Terminal,
     backend::Backend,
     layout::Rect,
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
-use std::io;
+use std::{env, fs, io};
 
 use crate::editor::Editor;
-use crate::theme::{self, Theme, Version};
+use crate::settings::{color_name, color_names, UserSettings};
+use crate::theme::{Theme, Version};
 
 mod v1;
 mod v2;
@@ -95,12 +96,15 @@ const MENU_ITEMS: &[&[MenuItem]] = &[
         ),
         item("Change...", "", Some(0), "Changes specified text"),
     ],
-    &[item(
-        "Scrollbars",
-        "",
-        Some(0),
-        "Shows or hides scroll bars",
-    )],
+    &[
+        item("Display...", "", Some(0), "Changes display colors and style"),
+        item(
+            "Scrollbars",
+            "",
+            Some(0),
+            "Shows or hides scroll bars",
+        ),
+    ],
     &[
         item("Getting Started", "", Some(0), "Displays basic help"),
         item("Keyboard", "", Some(0), "Displays keyboard help"),
@@ -130,6 +134,10 @@ pub(super) enum Mode {
     ConfirmNew,
     ConfirmExit,
     About,
+    DisplaySettings {
+        draft: UserSettings,
+        focus: usize,
+    },
 }
 
 pub struct App {
@@ -138,6 +146,7 @@ pub struct App {
     pub(super) last_find: String,
     pub(super) message: Option<String>,
     pub(super) page_height: usize,
+    pub(super) settings: UserSettings,
     pub theme: Theme,
 }
 
@@ -145,10 +154,21 @@ impl App {
     pub fn new() -> Self {
         let mut editor = Editor::new();
         let args: Vec<String> = std::env::args().collect();
-        if args.len() > 1 {
-            let _ = editor.load_file(&args[1]);
+        let mut settings = UserSettings::load();
+        let mut filename = None;
+        for arg in args.iter().skip(1) {
+            match arg.as_str() {
+                "--v1" => settings.set_style(Version::V1),
+                "--v2" => settings.set_style(Version::V2),
+                _ if filename.is_none() => filename = Some(arg.clone()),
+                _ => {}
+            }
         }
-        let initial_mode = if args.len() <= 1 {
+        let theme = settings.theme();
+        if let Some(path) = filename.as_deref() {
+            let _ = editor.load_file(path);
+        }
+        let initial_mode = if filename.is_none() {
             Mode::Welcome
         } else {
             Mode::Normal
@@ -159,7 +179,8 @@ impl App {
             last_find: String::new(),
             message: None,
             page_height: 20,
-            theme: theme::v1(),
+            settings,
+            theme,
         }
     }
 
@@ -236,6 +257,7 @@ impl App {
         let fill = " ".repeat(area.width as usize);
         f.render_widget(Paragraph::new(Span::styled(fill, base)), area);
 
+        let show_accels = matches!(self.mode, Mode::Menu { .. });
         let mut spans: Vec<Span> = vec![Span::styled(
             if self.theme.version == Version::V1 {
                 "  "
@@ -264,7 +286,7 @@ impl App {
             let acc_pos = MENU_ACCELS[i];
             spans.push(Span::styled(" ", bg));
             for (j, ch) in name.char_indices() {
-                let st = if j == acc_pos { ac } else { fg };
+                let st = if show_accels && j == acc_pos { ac } else { fg };
                 spans.push(Span::styled(ch.to_string(), st));
             }
             spans.push(Span::styled(" ", bg));
@@ -448,7 +470,10 @@ impl App {
             } else {
                 " MS-DOS Editor  <F1=Help> Press ALT to activate menus".to_string()
             };
-            if matches!(self.mode, Mode::Welcome | Mode::ConfirmNew | Mode::ConfirmExit) {
+            if matches!(
+                self.mode,
+                Mode::Welcome | Mode::ConfirmNew | Mode::ConfirmExit
+            ) {
                 f.render_widget(
                     Paragraph::new(Span::styled(
                         format!("{:<w$}", left, w = w),
@@ -510,7 +535,7 @@ impl App {
         match mode {
             Mode::Welcome => self.welcome_dialog(f),
             Mode::Open(s) => self.input_dialog(f, "Open", "File Name:", s),
-            Mode::SaveAs(s) => self.input_dialog(f, "Save As", "File Name:", s),
+            Mode::SaveAs(s) => self.save_as_dialog(f, s),
             Mode::Find(s) => self.input_dialog(f, "Find", "Find What:", s),
             Mode::Goto(s) => self.input_dialog(f, "Go To Line", "Line Number:", s),
             Mode::ConfirmNew | Mode::ConfirmExit => self.confirm_save_dialog(f),
@@ -520,6 +545,9 @@ impl App {
                 replace,
                 focus,
             } => self.replace_dialog(f, find, replace, *focus),
+            Mode::DisplaySettings { draft, focus } => {
+                self.display_settings_dialog(f, draft, *focus)
+            }
             _ => {}
         }
     }
@@ -560,6 +588,263 @@ impl App {
         self.btn(f, inner.x + 9, inner.y + 4, "[ Cancel ]");
     }
 
+    fn save_as_dialog(&self, f: &mut Frame, input: &str) {
+        let size = f.area();
+        let area = Rect::new(
+            0,
+            1.min(size.height),
+            size.width,
+            size.height.saturating_sub(2),
+        );
+        if area.width < 12 || area.height < 8 {
+            return;
+        }
+        f.render_widget(Clear, area);
+
+        let box_style = Style::default().bg(Color::Gray).fg(Color::Black);
+        let title_style = Style::default().bg(Color::White).fg(Color::Black);
+        let accel_style = Style::default().bg(Color::Gray).fg(Color::White);
+        let shadow_style = Style::default().bg(Color::Black).fg(Color::DarkGray);
+        let inner_w = area.width.saturating_sub(2) as usize;
+
+        if area.x + area.width + 2 <= size.width {
+            for y in area.y + 1..area.y + area.height {
+                f.render_widget(
+                    Paragraph::new(Span::styled("  ", shadow_style)),
+                    Rect::new(area.x + area.width, y, 2, 1),
+                );
+            }
+        }
+        if area.y + area.height < size.height.saturating_sub(1) {
+            f.render_widget(
+                Paragraph::new(Span::styled(" ".repeat(area.width as usize), shadow_style)),
+                Rect::new(
+                    area.x + 2,
+                    area.y + area.height,
+                    area.width.saturating_sub(2),
+                    1,
+                ),
+            );
+        }
+
+        let title = " Save As ";
+        let side = inner_w.saturating_sub(title.len());
+        let left = side / 2;
+        let right = side - left;
+        let mut top = Vec::new();
+        top.push(Span::styled("┌", box_style));
+        top.push(Span::styled("─".repeat(left), box_style));
+        top.push(Span::styled(
+            format!("{:^w$}", title, w = title.len()),
+            title_style,
+        ));
+        top.push(Span::styled("─".repeat(right), box_style));
+        top.push(Span::styled("┐", box_style));
+        f.render_widget(
+            Paragraph::new(Line::from(top)),
+            Rect::new(area.x, area.y, area.width, 1),
+        );
+
+        for row in 1..area.height.saturating_sub(1) {
+            let y = area.y + row;
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_style)),
+                Rect::new(area.x, y, 1, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled(" ".repeat(inner_w), box_style)),
+                Rect::new(area.x + 1, y, inner_w as u16, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_style)),
+                Rect::new(area.x + area.width - 1, y, 1, 1),
+            );
+        }
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("└{}┘", "─".repeat(inner_w)),
+                box_style,
+            )),
+            Rect::new(area.x, area.y + area.height - 1, area.width, 1),
+        );
+
+        let label_x = area.x + ((area.width.saturating_sub(50)) / 2).max(4);
+        let field_w = inner_w.saturating_sub(18).min(32);
+        let field = format!("[{:<w$}]", input, w = field_w);
+        let mut file_line = Vec::new();
+        file_line.push(Span::styled("File ", box_style));
+        file_line.push(Span::styled("N", accel_style));
+        file_line.push(Span::styled("ame: ", box_style));
+        file_line.push(Span::styled(field, box_style));
+        f.render_widget(
+            Paragraph::new(Line::from(file_line)),
+            Rect::new(label_x, area.y + 2, inner_w as u16 - 4, 1),
+        );
+
+        let cwd = env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+        let cwd_text = Self::fit_text(&cwd, inner_w.saturating_sub(6));
+        f.render_widget(
+            Paragraph::new(Span::styled(cwd_text, box_style)),
+            Rect::new(label_x, area.y + 4, inner_w as u16 - 4, 1),
+        );
+
+        let mut labels = Vec::new();
+        labels.push(Span::styled(" Existing ", box_style));
+        labels.push(Span::styled("F", accel_style));
+        labels.push(Span::styled("iles:         ", box_style));
+        labels.push(Span::styled("D", accel_style));
+        labels.push(Span::styled("irectories:", box_style));
+        f.render_widget(
+            Paragraph::new(Line::from(labels)),
+            Rect::new(label_x, area.y + 6, inner_w as u16 - 4, 1),
+        );
+
+        let (files, dirs) = Self::dir_listing();
+        self.render_save_as_list(f, Rect::new(label_x, area.y + 7, 23, 11), &files);
+        self.render_save_as_list(f, Rect::new(label_x + 25, area.y + 7, 21, 11), &dirs);
+
+        self.render_dos_button(
+            f,
+            label_x + 2,
+            area.y + area.height - 3,
+            "►  OK  ◄",
+            None,
+            true,
+        );
+        self.render_dos_button(
+            f,
+            label_x + 18,
+            area.y + area.height - 3,
+            "  Cancel  ",
+            None,
+            false,
+        );
+        self.render_dos_button(
+            f,
+            label_x + 35,
+            area.y + area.height - 3,
+            "  Help  ",
+            Some(2),
+            false,
+        );
+
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!(
+                    "{:<w$}",
+                    "F1=Help  Enter=Execute  Esc=Cancel  Tab=Next Field",
+                    w = size.width as usize
+                ),
+                Style::default()
+                    .bg(self.theme.stat_bg)
+                    .fg(self.theme.stat_fg),
+            )),
+            Rect::new(0, size.height.saturating_sub(1), size.width, 1),
+        );
+    }
+
+    fn render_save_as_list(&self, f: &mut Frame, area: Rect, entries: &[String]) {
+        let style = Style::default().bg(Color::Gray).fg(Color::Black);
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("┌{}┐", "─".repeat(area.width as usize - 2)),
+                style,
+            )),
+            Rect::new(area.x, area.y, area.width, 1),
+        );
+        let rows = area.height.saturating_sub(2) as usize;
+        for i in 0..rows {
+            let text = entries.get(i).map(String::as_str).unwrap_or("");
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    format!(
+                        "│ {:<w$}│",
+                        Self::fit_text(text, area.width as usize - 4),
+                        w = area.width as usize - 3
+                    ),
+                    style,
+                )),
+                Rect::new(area.x, area.y + 1 + i as u16, area.width, 1),
+            );
+        }
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("└{}┘", "─".repeat(area.width as usize - 2)),
+                style,
+            )),
+            Rect::new(area.x, area.y + area.height - 1, area.width, 1),
+        );
+    }
+
+    fn render_dos_button(
+        &self,
+        f: &mut Frame,
+        x: u16,
+        y: u16,
+        label: &str,
+        accel: Option<usize>,
+        selected: bool,
+    ) {
+        let style = Style::default().bg(Color::White).fg(Color::Black);
+        let accel_style = Style::default().bg(Color::White).fg(Color::Red);
+        let shadow_style = Style::default().bg(Color::Gray).fg(Color::Black);
+        let mut spans = Vec::new();
+        for (i, ch) in label.chars().enumerate() {
+            spans.push(Span::styled(
+                ch.to_string(),
+                if accel == Some(i) { accel_style } else { style },
+            ));
+        }
+        f.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect::new(x, y, label.chars().count() as u16, 1),
+        );
+        let shadow = if selected {
+            "▀▀▀▀▀▀▀▀"
+        } else {
+            "▀▀▀▀▀▀▀▀▀▀"
+        };
+        f.render_widget(
+            Paragraph::new(Span::styled(shadow, shadow_style)),
+            Rect::new(x + 1, y + 1, shadow.len() as u16, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled("▄", shadow_style)),
+            Rect::new(x + label.chars().count() as u16, y, 1, 1),
+        );
+    }
+
+    fn dir_listing() -> (Vec<String>, Vec<String>) {
+        let mut files = Vec::new();
+        let mut dirs = Vec::new();
+        if let Ok(read_dir) = fs::read_dir(".") {
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    dirs.push(format!("[{}]", name));
+                } else {
+                    files.push(name);
+                }
+            }
+        }
+        files.sort_by_key(|s| s.to_ascii_lowercase());
+        dirs.sort_by_key(|s| s.to_ascii_lowercase());
+        files.truncate(9);
+        dirs.truncate(9);
+        (files, dirs)
+    }
+
+    fn fit_text(text: &str, width: usize) -> String {
+        let mut out: String = text.chars().take(width).collect();
+        if text.chars().count() > width && width > 0 {
+            out.pop();
+            out.push('…');
+        }
+        out
+    }
+
     fn confirm_save_dialog(&self, f: &mut Frame) {
         if self.theme.version == Version::V1 {
             self.confirm_save_dialog_v1(f);
@@ -597,10 +882,7 @@ impl App {
             );
         }
         f.render_widget(
-            Paragraph::new(Span::styled(
-                " ".repeat(area.width as usize),
-                shadow_style,
-            )),
+            Paragraph::new(Span::styled(" ".repeat(area.width as usize), shadow_style)),
             Rect::new(area.x + 2, area.y + area.height, area.width, 1),
         );
 
@@ -609,11 +891,7 @@ impl App {
             Rect::new(area.x, area.y, area.width, 1),
         );
 
-        let rows = [
-            "",
-            "   Loaded file is not saved. Save it now?   ",
-            "",
-        ];
+        let rows = ["", "   Loaded file is not saved. Save it now?   ", ""];
         for (i, row) in rows.iter().enumerate() {
             let y = area.y + 1 + i as u16;
             f.render_widget(
@@ -771,6 +1049,152 @@ impl App {
         self.btn(f, inner.x + 9, inner.y + 7, "[ Cancel ]");
     }
 
+    fn display_settings_dialog(&self, f: &mut Frame, draft: &UserSettings, focus: usize) {
+        if f.area().width < 66 || f.area().height < 22 {
+            self.confirm_dialog(f, "Display", "Terminal is too small for display settings.");
+            return;
+        }
+        let area = Self::center_rect(f, 66, 20);
+        f.render_widget(Clear, area);
+
+        let box_style = Style::default().bg(Color::Gray).fg(Color::Black);
+        let title_style = Style::default().bg(Color::White).fg(Color::Black);
+        let accel_style = Style::default().bg(Color::Gray).fg(Color::White);
+        let shadow_style = Style::default().bg(Color::Black).fg(Color::DarkGray);
+        let inner_w = area.width.saturating_sub(2) as usize;
+
+        if area.x + area.width + 2 <= f.area().width {
+            for y in area.y + 1..area.y + area.height {
+                f.render_widget(
+                    Paragraph::new(Span::styled("  ", shadow_style)),
+                    Rect::new(area.x + area.width, y, 2, 1),
+                );
+            }
+        }
+        if area.y + area.height < f.area().height {
+            f.render_widget(
+                Paragraph::new(Span::styled(" ".repeat(area.width as usize), shadow_style)),
+                Rect::new(
+                    area.x + 2,
+                    area.y + area.height,
+                    area.width.saturating_sub(2),
+                    1,
+                ),
+            );
+        }
+
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("┌{}┐", "─".repeat(inner_w)), box_style)),
+            Rect::new(area.x, area.y, area.width, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled(" Display ", title_style)),
+            Rect::new(area.x + (area.width.saturating_sub(9)) / 2, area.y, 9, 1),
+        );
+        for row in 1..area.height.saturating_sub(1) {
+            let y = area.y + row;
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_style)),
+                Rect::new(area.x, y, 1, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled(" ".repeat(inner_w), box_style)),
+                Rect::new(area.x + 1, y, inner_w as u16, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_style)),
+                Rect::new(area.x + area.width - 1, y, 1, 1),
+            );
+        }
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("└{}┘", "─".repeat(inner_w)), box_style)),
+            Rect::new(area.x, area.y + area.height - 1, area.width, 1),
+        );
+
+        let x = area.x + 4;
+        self.render_display_row(
+            f,
+            Rect::new(x, area.y + 2, area.width.saturating_sub(8), 1),
+            "Default style",
+            match draft.style {
+                Version::V1 => "V1",
+                Version::V2 => "V2",
+            },
+            focus == 0,
+        );
+
+        let c = &draft.colors;
+        let rows = [
+            ("Menu foreground", c.menu_fg),
+            ("Menu background", c.menu_bg),
+            ("Editor foreground", c.editor_fg),
+            ("Editor background", c.editor_bg),
+            ("Status foreground", c.status_fg),
+            ("Status background", c.status_bg),
+            ("Dialog foreground", c.dialog_fg),
+            ("Dialog background", c.dialog_bg),
+            ("Title foreground", c.title_fg),
+            ("Title background", c.title_bg),
+            ("Scrollbar foreground", c.scrollbar_fg),
+            ("Scrollbar background", c.scrollbar_bg),
+        ];
+        for (idx, (label, color)) in rows.iter().enumerate() {
+            self.render_display_row(
+                f,
+                Rect::new(x, area.y + 4 + idx as u16, area.width.saturating_sub(8), 1),
+                label,
+                color_name(*color),
+                focus == idx + 1,
+            );
+        }
+
+        let mut hint = Vec::new();
+        hint.push(Span::styled(" ", box_style));
+        hint.push(Span::styled("Enter", accel_style));
+        hint.push(Span::styled("=Save   Esc=Cancel   Arrows=Change", box_style));
+        f.render_widget(
+            Paragraph::new(Line::from(hint)),
+            Rect::new(x, area.y + area.height - 3, area.width.saturating_sub(8), 1),
+        );
+
+        self.render_dialog_button(f, x, area.y + area.height - 2, "< OK >", focus == 13);
+        self.render_dialog_button(
+            f,
+            x + 10,
+            area.y + area.height - 2,
+            "< Cancel >",
+            focus == 14,
+        );
+    }
+
+    fn render_display_row(&self, f: &mut Frame, area: Rect, label: &str, value: &str, focused: bool) {
+        let style = if focused {
+            Style::default().bg(Color::Black).fg(Color::White)
+        } else {
+            Style::default().bg(Color::Gray).fg(Color::Black)
+        };
+        let text = format!("{:<24} < {:<16} >", label, value);
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("{:<w$}", text, w = area.width as usize),
+                style,
+            )),
+            area,
+        );
+    }
+
+    fn render_dialog_button(&self, f: &mut Frame, x: u16, y: u16, label: &str, focused: bool) {
+        let style = if focused {
+            Style::default().bg(Color::Black).fg(Color::White)
+        } else {
+            Style::default().bg(Color::Gray).fg(Color::Black)
+        };
+        f.render_widget(
+            Paragraph::new(Span::styled(label, style)),
+            Rect::new(x, y, label.len() as u16, 1),
+        );
+    }
+
     pub(super) fn btn(&self, f: &mut Frame, x: u16, y: u16, label: &str) {
         let t = &self.theme;
         f.render_widget(
@@ -801,6 +1225,7 @@ impl App {
                 replace,
                 focus,
             } => self.key_replace(key, find, replace, focus),
+            Mode::DisplaySettings { draft, focus } => self.key_display_settings(key, draft, focus),
             Mode::ConfirmNew => self.key_confirm_new(key),
             Mode::ConfirmExit => self.key_confirm_exit(key),
             Mode::About => {
@@ -949,16 +1374,12 @@ impl App {
             KeyCode::Enter => return self.activate(mi, ii),
             KeyCode::Char(c) => {
                 let needle = c.to_ascii_lowercase();
-                if let Some((idx, _)) = MENU_ITEMS[mi]
-                    .iter()
-                    .enumerate()
-                    .find(|(_, it)| {
-                        it.accel
-                            .and_then(|pos| it.name.chars().nth(pos))
-                            .map(|ch| ch.to_ascii_lowercase() == needle)
-                            .unwrap_or(false)
-                    })
-                {
+                if let Some((idx, _)) = MENU_ITEMS[mi].iter().enumerate().find(|(_, it)| {
+                    it.accel
+                        .and_then(|pos| it.name.chars().nth(pos))
+                        .map(|ch| ch.to_ascii_lowercase() == needle)
+                        .unwrap_or(false)
+                }) {
                     return self.activate(mi, idx);
                 }
             }
@@ -1004,6 +1425,12 @@ impl App {
                 self.mode = Mode::Replace {
                     find: self.last_find.clone(),
                     replace: String::new(),
+                    focus: 0,
+                };
+            }
+            (3, 0) => {
+                self.mode = Mode::DisplaySettings {
+                    draft: self.settings.clone(),
                     focus: 0,
                 };
             }
@@ -1211,6 +1638,103 @@ impl App {
             _ => {}
         }
         false
+    }
+
+    fn key_display_settings(
+        &mut self,
+        key: KeyEvent,
+        mut draft: UserSettings,
+        mut focus: usize,
+    ) -> bool {
+        const DISPLAY_FOCUS_COUNT: usize = 15;
+        match key.code {
+            KeyCode::Esc => {
+                self.mode = Mode::Normal;
+                return false;
+            }
+            KeyCode::Up => {
+                focus = if focus == 0 {
+                    DISPLAY_FOCUS_COUNT - 1
+                } else {
+                    focus - 1
+                };
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                focus = (focus + 1) % DISPLAY_FOCUS_COUNT;
+            }
+            KeyCode::Left => {
+                Self::change_display_value(&mut draft, focus, -1);
+            }
+            KeyCode::Right => {
+                Self::change_display_value(&mut draft, focus, 1);
+            }
+            KeyCode::Enter => {
+                if focus == 14 {
+                    self.mode = Mode::Normal;
+                    return false;
+                }
+                self.settings = draft;
+                self.theme = self.settings.theme();
+                match self.settings.save() {
+                    Ok(()) => self.message = Some("Settings saved".to_string()),
+                    Err(e) => self.message = Some(format!("Error saving settings: {}", e)),
+                }
+                self.mode = Mode::Normal;
+                return false;
+            }
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                self.settings = draft;
+                self.theme = self.settings.theme();
+                match self.settings.save() {
+                    Ok(()) => self.message = Some("Settings saved".to_string()),
+                    Err(e) => self.message = Some(format!("Error saving settings: {}", e)),
+                }
+                self.mode = Mode::Normal;
+                return false;
+            }
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.mode = Mode::Normal;
+                return false;
+            }
+            _ => {}
+        }
+        self.mode = Mode::DisplaySettings { draft, focus };
+        false
+    }
+
+    fn change_display_value(draft: &mut UserSettings, focus: usize, delta: isize) {
+        if focus == 0 {
+            let next = match draft.style {
+                Version::V1 => Version::V2,
+                Version::V2 => Version::V1,
+            };
+            draft.set_style(next);
+            return;
+        }
+        let color = match focus {
+            1 => &mut draft.colors.menu_fg,
+            2 => &mut draft.colors.menu_bg,
+            3 => &mut draft.colors.editor_fg,
+            4 => &mut draft.colors.editor_bg,
+            5 => &mut draft.colors.status_fg,
+            6 => &mut draft.colors.status_bg,
+            7 => &mut draft.colors.dialog_fg,
+            8 => &mut draft.colors.dialog_bg,
+            9 => &mut draft.colors.title_fg,
+            10 => &mut draft.colors.title_bg,
+            11 => &mut draft.colors.scrollbar_fg,
+            12 => &mut draft.colors.scrollbar_bg,
+            _ => return,
+        };
+        *color = Self::cycle_color(*color, delta);
+    }
+
+    fn cycle_color(color: Color, delta: isize) -> Color {
+        let names = color_names();
+        let current = color_name(color);
+        let idx = names.iter().position(|name| *name == current).unwrap_or(0);
+        let next = (idx as isize + delta).rem_euclid(names.len() as isize) as usize;
+        crate::settings::parse_color(names[next]).unwrap_or(color)
     }
 
     fn key_confirm_new(&mut self, key: KeyEvent) -> bool {

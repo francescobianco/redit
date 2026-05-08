@@ -66,7 +66,7 @@ pub fn v1() -> Theme {
         menu_bg: Color::Gray,  // ESC[47m ≈ light gray
         menu_fg: Color::Black, // ESC[30m
 
-        drop_bg: Color::White,
+        drop_bg: Color::Gray,
         drop_fg: Color::Black,
         drop_sel_bg: Color::Black,
         drop_sel_fg: Color::White,
@@ -103,7 +103,7 @@ pub fn v2() -> Theme {
         menu_bg: Color::Gray,
         menu_fg: Color::Black,
 
-        drop_bg: Color::White,
+        drop_bg: Color::Gray,
         drop_fg: Color::Black,
         drop_sel_bg: Color::Black,
         drop_sel_fg: Color::White,

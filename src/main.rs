@@ -11,6 +11,7 @@ use std::{io, panic};
 
 mod app;
 mod editor;
+mod settings;
 mod syntax;
 mod theme;
 
