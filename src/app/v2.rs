@@ -82,7 +82,7 @@ impl App {
             }
 
             let on_this_line = line_idx == cy;
-            if line_idx < self.editor.highlighted.len() {
+            if !self.faithful && line_idx < self.editor.highlighted.len() {
                 let hl = self.editor.highlighted[line_idx].clone();
                 Self::render_highlighted_row(
                     f, text_area, &hl, sx, cx, on_this_line,

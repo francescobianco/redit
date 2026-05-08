@@ -205,7 +205,10 @@ pub struct App {
     pub(super) page_height: usize,
     pub(super) settings: UserSettings,
     pub theme: Theme,
-    // Ctrl+\ toggles keyboard debug mode; stores the last key description
+    /// --faithful: disable all redit-specific enhancements (syntax highlight, etc.)
+    /// so behavior matches the original MS-DOS EDIT as closely as possible.
+    pub faithful: bool,
+    // F12 toggles keyboard debug mode; stores the last key description
     pub(super) kbd_debug: Option<String>,
 }
 
@@ -215,10 +218,12 @@ impl App {
         let args: Vec<String> = std::env::args().collect();
         let mut settings = UserSettings::load();
         let mut filename = None;
+        let mut faithful = false;
         for arg in args.iter().skip(1) {
             match arg.as_str() {
                 "--v1" => settings.set_style(Version::V1),
                 "--v2" => settings.set_style(Version::V2),
+                "--faithful" => faithful = true,
                 _ if filename.is_none() => filename = Some(arg.clone()),
                 _ => {}
             }
@@ -240,6 +245,7 @@ impl App {
             page_height: 20,
             settings,
             theme,
+            faithful,
             kbd_debug: None,
         }
     }
@@ -1822,7 +1828,7 @@ impl App {
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
         // F12 toggles keyboard debug mode (works in any mode, no ambiguous byte)
-        if key.code == KeyCode::F(12) && key.modifiers == KeyModifiers::NONE {
+        if !self.faithful && key.code == KeyCode::F(12) && key.modifiers == KeyModifiers::NONE {
             self.kbd_debug = match self.kbd_debug {
                 None    => Some("KBD DEBUG ON — press keys (F12=off)".to_string()),
                 Some(_) => None,
@@ -1830,7 +1836,7 @@ impl App {
             return false;
         }
         // In debug mode record every key description in the status bar slot
-        if self.kbd_debug.is_some() {
+        if !self.faithful && self.kbd_debug.is_some() {
             self.kbd_debug = Some(format!("KBD: {}  [raw code={:?} mod={:?}]",
                 Self::key_desc(key), key.code, key.modifiers));
         }
