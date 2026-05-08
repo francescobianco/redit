@@ -12,6 +12,8 @@ use std::{
     thread,
 };
 
+const HISTORY_CAP: usize = 262_144; // 256 KB — bounds the resize replay cost
+
 pub struct TermPane {
     pub height: u16,
     pub width: u16,
@@ -21,6 +23,7 @@ pub struct TermPane {
     writer: Box<dyn Write + Send>,
     rx: Receiver<Vec<u8>>,
     pub parser: vt100::Parser,
+    history: Vec<u8>, // bounded log of raw PTY bytes for resize replay
 }
 
 impl TermPane {
@@ -73,6 +76,7 @@ impl TermPane {
             writer,
             rx,
             parser: vt100::Parser::new(height, width, 0),
+            history: Vec::new(),
         })
     }
 
@@ -85,7 +89,9 @@ impl TermPane {
             pixel_width: 0,
             pixel_height: 0,
         });
+        // Recreate parser with new dimensions and replay history to restore content
         self.parser = vt100::Parser::new(height, width, 0);
+        self.parser.process(&self.history);
     }
 
     pub fn write_input(&mut self, bytes: &[u8]) {
@@ -100,6 +106,12 @@ impl TermPane {
             if bytes.is_empty() {
                 self.closed = true;
             } else {
+                // Append to history, trimming the oldest bytes when over cap
+                self.history.extend_from_slice(&bytes);
+                if self.history.len() > HISTORY_CAP {
+                    let trim = self.history.len() - HISTORY_CAP;
+                    self.history.drain(..trim);
+                }
                 self.parser.process(&bytes);
             }
         }
