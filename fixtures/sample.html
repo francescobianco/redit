@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sample Page &amp; Demo</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Embedded CSS */
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #1c1c1c;
+            color: #e0e0e0;
+        }
+        .container { max-width: 960px; margin: 0 auto; }
+        h1 > span.highlight { color: #ff6b6b; font-weight: bold; }
+        input[type="text"]:focus { outline: 2px solid #4ecdc4; }
+    </style>
+</head>
+<body>
+    <!-- Main navigation -->
+    <nav id="main-nav" class="navbar" aria-label="Main navigation">
+        <ul>
+            <li><a href="/" class="active">Home</a></li>
+            <li><a href="/about">About &amp; Team</a></li>
+            <li><a href="/contact" data-track="cta">Contact</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        <header>
+            <h1>Welcome to <span class="highlight">redit</span> &mdash; a Rust text editor</h1>
+            <p>Supports <strong>bold</strong>, <em>italic</em>, and <code>inline code</code>.</p>
+        </header>
+
+        <!-- Article section with nested elements -->
+        <article id="content" data-version="1.0" data-author="Francesco">
+            <h2>Features</h2>
+            <ul class="feature-list">
+                <li>Syntax highlighting via <abbr title="syntect">syntect</abbr></li>
+                <li>MS-DOS EDIT V1 &amp; V2 themes</li>
+                <li>Unicode &amp; emoji support: &#x1F600; &#x2764;</li>
+            </ul>
+
+            <h2>Code Example</h2>
+            <pre><code class="language-rust">
+fn main() {
+    println!("Hello, {}!", "world");
+}
+            </code></pre>
+
+            <!-- Form with various input types -->
+            <form action="/submit" method="POST" enctype="multipart/form-data">
+                <fieldset>
+                    <legend>User Info</legend>
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" name="name" required
+                           placeholder="John O'Brien" maxlength="100">
+
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" name="email"
+                           pattern="[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$">
+
+                    <label for="color">Favorite color:</label>
+                    <input type="color" id="color" name="color" value="#ff6b6b">
+
+                    <label>
+                        <input type="checkbox" name="agree" value="1" checked>
+                        I agree to the <a href="/terms">Terms &amp; Conditions</a>
+                    </label>
+
+                    <select name="role" multiple>
+                        <optgroup label="Admin">
+                            <option value="superadmin">Super Admin</option>
+                            <option value="admin" selected>Admin</option>
+                        </optgroup>
+                        <optgroup label="User">
+                            <option value="editor">Editor</option>
+                            <option value="viewer">Viewer</option>
+                        </optgroup>
+                    </select>
+
+                    <textarea name="bio" rows="5" cols="40"
+                              placeholder="Tell us about yourself..."></textarea>
+                </fieldset>
+                <button type="submit" class="btn btn--primary">Submit &rarr;</button>
+                <button type="reset">Reset</button>
+            </form>
+        </article>
+
+        <!-- Table with complex structure -->
+        <section aria-labelledby="table-heading">
+            <h2 id="table-heading">Key Bindings</h2>
+            <table border="1" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th scope="col">Key</th>
+                        <th scope="col">Action</th>
+                        <th scope="col">Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><kbd>Ctrl+S</kbd></td>
+                        <td>Save file</td>
+                        <td>Writes to <code>~/.reditrc</code></td>
+                    </tr>
+                    <tr class="alt">
+                        <td><kbd>Alt+F</kbd></td>
+                        <td>File menu</td>
+                        <td>Opens dropdown &mdash; use arrows</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>F1</kbd></td>
+                        <td>Help</td>
+                        <td>Context-sensitive &amp; searchable</td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="3">* All bindings configurable via <code>.reditrc</code></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2024 Francesco Bianco &lt;info@example.com&gt; | MIT License</p>
+        <!-- conditional comment for old IE: <!--[if lt IE 9]><script>alert('old')</script><![endif]--> -->
+    </footer>
+
+    <script src="app.js" defer></script>
+    <script>
+        // Inline JS
+        document.addEventListener('DOMContentLoaded', () => {
+            const nav = document.getElementById('main-nav');
+            nav?.classList.add('loaded');
+        });
+    </script>
+</body>
+</html>

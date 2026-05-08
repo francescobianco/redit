@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<!-- nested.html: stresses the highlighter with deep nesting, CDATA, mixed script/style -->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="it" xml:lang="it">
+<head>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Nested &amp; Tricky &#x1F9EA;</title>
+
+    <!-- SVG inline in head via style tag trick -->
+    <style type="text/css">
+        /* Can the highlighter handle a closing tag inside a CSS string? */
+        .after-body::after { content: "</style>"; }
+        .url { background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQ=='); }
+
+        @media screen and (max-width: 768px) {
+            body > header + main > .container:first-child { display: none; }
+        }
+
+        @keyframes spin {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        :root {
+            --primary: #3498db;
+            --font-size-base: clamp(14px, 2vw, 18px);
+        }
+    </style>
+
+    <script type="text/javascript">
+        // Script in head — can contain </script> only if split
+        var CONFIG = {
+            api: 'https://api.example.com',
+            // This string would close the tag if not careful: '</' + 'script>'
+            closeTag: '<\x2fscript>',
+            regex: /(<\/?)(\w+)/g,
+        };
+
+        // IIFE
+        (function(global) {
+            'use strict';
+            global.__loaded = Date.now();
+        })(window || globalThis);
+    </script>
+</head>
+<body itemscope itemtype="https://schema.org/WebPage">
+
+    <!-- SVG directly in HTML5 -->
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="50" height="50" aria-hidden="true">
+        <defs>
+            <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%"   stop-color="#ff6b6b" stop-opacity="1"/>
+                <stop offset="100%" stop-color="#339af0" stop-opacity="0.8"/>
+            </linearGradient>
+            <filter id="blur">
+                <feGaussianBlur stdDeviation="2"/>
+            </filter>
+        </defs>
+        <circle cx="50" cy="50" r="45" fill="url(#grad)" filter="url(#blur)"/>
+        <text x="50" y="55" text-anchor="middle" fill="white" font-size="20">Hi</text>
+        <!-- This is an SVG comment — </svg> won't end it -->
+    </svg>
+
+    <!-- MathML inline -->
+    <math xmlns="http://www.w3.org/1998/Math/MathML" display="block">
+        <mrow>
+            <mi>E</mi>
+            <mo>=</mo>
+            <msup><mi>mc</mi><mn>2</mn></msup>
+        </mrow>
+    </math>
+
+    <!-- Deep nesting -->
+    <div id="l1">
+        <div id="l2">
+            <div id="l3">
+                <div id="l4">
+                    <div id="l5">
+                        <p>Deeply nested paragraph with <strong><em><u><code>all the inlines</code></u></em></strong></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Attribute edge cases -->
+    <div
+        data-json='{"key": "value with &apos;single&apos; and &quot;double&quot; quotes"}'
+        data-multiline="line1
+line2
+line3"
+        class="a b c d e f g h i j k l m n o p q r s t u v w x y z"
+        style="color: red; background: url(&quot;data:image/gif;base64,R0l&quot;);"
+        onclick="alert(&quot;clicked &amp; done&quot;)"
+        aria-label="Button: &lt;click me&gt; &amp; enjoy"
+    >
+        Attribute hell
+    </div>
+
+    <!-- Script with CDATA for XHTML compatibility -->
+    <script type="text/javascript">
+    //<![CDATA[
+        const data = {
+            html: '<div class="box">Hello &amp; World</div>',
+            template: `
+                <article>
+                    <h1>${document.title}</h1>
+                    <p>Generated at ${new Date().toLocaleDateString('it-IT')}</p>
+                </article>
+            `,
+        };
+
+        // Regex that looks like tags
+        const TAG_RE = /<([a-z][a-z0-9]*)\b([^>]*)>(.*?)<\/\1>/gis;
+
+        document.querySelectorAll('[data-json]').forEach((el) => {
+            try {
+                const obj = JSON.parse(el.dataset.json);
+                Object.assign(el.dataset, obj);
+            } catch (e) {
+                console.error('JSON parse error:', e.message, '\nin element:', el.outerHTML);
+            }
+        });
+    //]]>
+    </script>
+
+    <!-- Conditional comments (IE legacy) -->
+    <!--[if IE]><p class="ie-warning">You are using Internet Explorer!</p><![endif]-->
+    <!--[if lt IE 9]>
+        <script src="html5shiv.min.js"></script>
+        <script src="respond.min.js"></script>
+    <![endif]-->
+
+    <!-- Server-side template syntax mixed in (JSP / Thymeleaf style, stresses highlighter) -->
+    <!-- th:text="${user.name}" th:if="${user.active}" -->
+    <!-- <%= expression %> -->
+    <!-- <?php echo htmlspecialchars($name); ?> -->
+
+    <style>
+        /* Second style block — highlighter must track state across blocks */
+        [data-json]::before { content: "JSON: " attr(data-json); }
+        p:not(:last-child):not(.special)::first-line { font-weight: bold; }
+        @supports (display: grid) {
+            .container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+        }
+    </style>
+
+</body>
+</html>

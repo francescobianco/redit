@@ -592,6 +592,71 @@ impl App {
         f.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
+    /// Like `render_text_row` but uses per-character colors from syntect highlighting.
+    /// Keeps the editor's `edit_bg` as background; only overrides foreground.
+    pub(super) fn render_highlighted_row(
+        f: &mut Frame,
+        area: Rect,
+        hl_line: &ratatui::text::Line<'static>,
+        sx: usize,
+        cx: usize,
+        cursor_here: bool,
+        edit_bg: Color,
+        cur_style: Style,
+        tab_stop: usize,
+    ) {
+        let vw = area.width as usize;
+
+        // Flatten highlighted spans into (char, Style) pairs, forcing edit_bg
+        let mut char_styles: Vec<(char, Style)> = Vec::new();
+        for span in &hl_line.spans {
+            let s = span.style.bg(edit_bg);
+            for c in span.content.chars() {
+                char_styles.push((c, s));
+            }
+        }
+
+        // Compute display column at sx (needed for correct tab expansion)
+        let mut raw_col = 0usize;
+        for &(c, _) in char_styles.iter().take(sx) {
+            raw_col += Self::char_display_width(c, raw_col, tab_stop);
+        }
+
+        let mut out: Vec<Span<'static>> = Vec::new();
+        let mut screen_col = 0usize;
+
+        for (i, &(c, style)) in char_styles.iter().enumerate().skip(sx) {
+            let w = Self::char_display_width(c, raw_col, tab_stop);
+            if screen_col + w > vw {
+                break;
+            }
+            let eff = if cursor_here && i == cx { cur_style } else { style };
+            if c == '\t' {
+                out.push(Span::styled(" ".repeat(w), eff));
+            } else {
+                out.push(Span::styled(c.to_string(), eff));
+            }
+            screen_col += w;
+            raw_col += w;
+        }
+
+        // Cursor past end of content
+        if cursor_here && cx >= char_styles.len() && screen_col < vw {
+            out.push(Span::styled(" ".to_string(), cur_style));
+            screen_col += 1;
+        }
+
+        // Pad remainder with plain editor background
+        if screen_col < vw {
+            out.push(Span::styled(
+                " ".repeat(vw - screen_col),
+                Style::default().bg(edit_bg),
+            ));
+        }
+
+        f.render_widget(Paragraph::new(Line::from(out)), area);
+    }
+
     // ── Status bar ────────────────────────────────────────────────────────────
 
     fn render_status_bar(&self, f: &mut Frame, area: Rect) {
