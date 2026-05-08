@@ -121,22 +121,56 @@ impl TermPane {
         self.drain();
         let screen = self.parser.screen();
 
-        // Separator line
         let sep_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        let label = if self.focused { "─ Terminal (Ctrl+T to unfocus) " } else { "─ Terminal (Ctrl+T to focus) " };
-        let sep_line = format!("{}{}", label, "─".repeat(area.width.saturating_sub(label.len() as u16) as usize));
+        let bdr_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+        let inner_bg  = Style::default().bg(Color::Black).fg(Color::Reset);
+
+        // ── Separator with ├ label ┤ connectors ──────────────────────────────
+        let label = if self.focused {
+            " Terminal (Ctrl+T: unfocus  Ctrl+↑↓: resize) "
+        } else {
+            " Terminal (Ctrl+T: focus) "
+        };
+        // inner dashes: area.width - 2 (for ├ and ┤), minus label length
+        let inner_w = area.width.saturating_sub(2) as usize;
+        let dashes = inner_w.saturating_sub(label.len());
+        let left_d  = dashes / 2;
+        let right_d = dashes - left_d;
+        let sep_line = format!(
+            "├{}{}{}┤",
+            "─".repeat(left_d),
+            label,
+            "─".repeat(right_d),
+        );
         f.render_widget(
             Paragraph::new(Span::styled(sep_line, sep_style)),
             Rect::new(area.x, area.y, area.width, 1),
         );
 
-        // Terminal rows
+        // ── Content rows with │ borders ──────────────────────────────────────
+        let content_w = area.width.saturating_sub(2) as usize; // between the two │
+
         for row in 0..self.height.min(area.height.saturating_sub(1)) {
             let y = area.y + 1 + row;
-            let mut spans: Vec<Span> = Vec::new();
 
-            for col in 0..self.width.min(area.width) {
-                let Some(cell) = screen.cell(row, col) else { continue };
+            // Left border
+            f.render_widget(
+                Paragraph::new(Span::styled("│", bdr_style)),
+                Rect::new(area.x, y, 1, 1),
+            );
+            // Right border
+            f.render_widget(
+                Paragraph::new(Span::styled("│", bdr_style)),
+                Rect::new(area.x + area.width - 1, y, 1, 1),
+            );
+
+            // Terminal content in the inner area
+            let content_area = Rect::new(area.x + 1, y, content_w as u16, 1);
+            let mut spans: Vec<Span> = Vec::new();
+            let mut rendered = 0usize;
+
+            for col in 0..self.width.min(content_w as u16) {
+                let Some(cell) = screen.cell(row, col) else { break };
                 let fg = vt_color(cell.fgcolor());
                 let bg = vt_color(cell.bgcolor());
                 let style = Style::default().fg(fg).bg(bg);
@@ -151,18 +185,23 @@ impl TermPane {
                     }
                     _ => spans.push(Span::styled(ch, style)),
                 }
+                rendered += 1;
             }
 
-            // Pad to area width
-            let rendered_cols = self.width.min(area.width) as usize;
-            if rendered_cols < area.width as usize {
-                let pad = " ".repeat(area.width as usize - rendered_cols);
-                spans.push(Span::styled(pad, Style::default().bg(Color::Black)));
+            // Pad remainder to content_w
+            if rendered < content_w {
+                let pad = " ".repeat(content_w - rendered);
+                match spans.last_mut() {
+                    Some(last) if last.style == inner_bg => {
+                        last.content = (last.content.to_string() + &pad).into();
+                    }
+                    _ => spans.push(Span::styled(pad, inner_bg)),
+                }
             }
 
             f.render_widget(
                 Paragraph::new(Line::from(spans)),
-                Rect::new(area.x, y, area.width, 1),
+                content_area,
             );
         }
     }
