@@ -256,9 +256,12 @@ impl App {
 
     pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         loop {
-            // Drain PTY output before drawing
+            // Drain PTY output; close pane if the shell exited
             if let Some(tp) = &mut self.term_pane {
                 tp.drain();
+            }
+            if self.term_pane.as_ref().map(|t| t.closed).unwrap_or(false) {
+                self.term_pane = None;
             }
 
             terminal.draw(|f| self.render(f))?;

@@ -16,6 +16,7 @@ pub struct TermPane {
     pub height: u16,
     pub width: u16,
     pub focused: bool,
+    pub closed: bool,
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     rx: Receiver<Vec<u8>>,
@@ -49,7 +50,11 @@ impl TermPane {
             let mut buf = [0u8; 4096];
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) | Err(_) => {
+                        // Empty vec signals EOF to the main thread
+                        let _ = tx.send(vec![]);
+                        break;
+                    }
                     Ok(n) => {
                         if tx.send(buf[..n].to_vec()).is_err() {
                             break;
@@ -63,6 +68,7 @@ impl TermPane {
             height,
             width,
             focused: true,
+            closed: false,
             master,
             writer,
             rx,
@@ -88,9 +94,14 @@ impl TermPane {
     }
 
     // Drain pending PTY output into the vt100 parser. Call each frame.
+    // Sets self.closed = true when the shell exits (EOF from PTY).
     pub fn drain(&mut self) {
         while let Ok(bytes) = self.rx.try_recv() {
-            self.parser.process(&bytes);
+            if bytes.is_empty() {
+                self.closed = true;
+            } else {
+                self.parser.process(&bytes);
+            }
         }
     }
 
