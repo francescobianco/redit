@@ -42,7 +42,7 @@ _start_editor() {
           "dosemu -t -K '$REPO/dos/EDIT/V1' -E '${arg:-EDIT.COM}' 2>/dev/null" ;;
       clone)
         tmux new-session -d -s "$SESSION" -x "$TERM_W" -y "$TERM_H" \
-          "cd '$REPO'; cargo run -q -- --faithful --${VERSION} ${arg} 2>/dev/null" ;;
+          "cd '$REPO'; env -u NO_COLOR cargo run -q -- --faithful --${VERSION} ${arg} 2>/dev/null" ;;
       *)
         echo "Unknown EDITOR_TARGET: $TARGET"; exit 1 ;;
     esac

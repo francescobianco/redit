@@ -55,7 +55,8 @@ pub struct Theme {
 
 /// V1 — exact MS-DOS EDIT 2.0 palette extracted from dosemu ANSI output.
 ///
-/// ESC[30m = Black fg   ESC[47m = Light-gray bg   (menu / title highlight)
+/// ESC[30m = Black fg   ESC[47m = Light-gray bg   (menu/dialog)
+/// ESC[34m = Blue fg    ESC[107m = Bright-white bg (filename title)
 /// ESC[37m = White fg   ESC[40m = Black bg         (frame box-drawing chars)
 /// ESC[44m = Blue bg                                (editor area)
 /// ESC[90m = Dark-gray fg                           (scrollbar)
@@ -69,7 +70,7 @@ pub fn v1() -> Theme {
         drop_bg: Color::Gray,
         drop_fg: Color::Black,
         drop_sel_bg: Color::Black,
-        drop_sel_fg: Color::White,
+        drop_sel_fg: Color::Gray,
 
         edit_bg: Color::Blue,  // ESC[44m
         edit_fg: Color::White, // ESC[37m
@@ -77,8 +78,8 @@ pub fn v1() -> Theme {
         frame_bg: Color::Blue,  // ESC[44m
         frame_fg: Color::White, // ESC[37m
 
-        title_bg: Color::Gray,  // ESC[47m — filename inverted in border
-        title_fg: Color::Black, // ESC[30m
+        title_bg: Color::White, // ESC[107m — filename inverted in border
+        title_fg: Color::Blue,  // ESC[34m
 
         scroll_bg: Color::Gray,  // ESC[47m
         scroll_fg: Color::Black, // ESC[30m

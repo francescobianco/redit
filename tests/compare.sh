@@ -38,6 +38,23 @@ echo -e "${B}Diffing captures …${N}"
 
 TEXT_DIFFS=0; COLOR_DIFFS=0; MATCHES=0; MISSING=0
 
+_ignore_specs_for_rel() {
+    local rel="$1" feature="${rel%%/*}" feature_file=""
+    for feat in "${features[@]}"; do
+        if [[ "$(basename "$feat" .feature)" == "$feature" ]]; then
+            feature_file="$feat"
+            break
+        fi
+    done
+    [[ -z "$feature_file" ]] && return 0
+    sed -n 's/^[[:space:]]*# compare-ignore:[[:space:]]*rows=\([0-9]\+-[0-9]\+\)[[:space:]]*cols=\([0-9]\+-[0-9]\+\)[[:space:]]*$/rows=\1,cols=\2/p' "$feature_file"
+}
+
+_normalize_capture() {
+    local kind="$1" file="$2"; shift 2
+    python3 "$REPO/tests/normalize_capture.py" "$kind" "$file" "$@"
+}
+
 if [[ $# -eq 0 ]]; then
     diff_roots=("$CAPTURES/original-v1")
 else
@@ -59,31 +76,38 @@ while IFS= read -r orig_file; do
     fi
 
     ext="${orig_file##*.}"
+    mapfile -t ignore_specs < <(_ignore_specs_for_rel "$rel")
 
-    if diff -q "$orig_file" "$clone_file" >/dev/null 2>&1; then
+    norm_orig=$(mktemp)
+    norm_clone=$(mktemp)
+    norm_diff=$(mktemp)
+    if [[ "$ext" == "ansi" ]]; then
+        _normalize_capture ansi "$orig_file" "${ignore_specs[@]}" > "$norm_orig"
+        _normalize_capture ansi "$clone_file" "${ignore_specs[@]}" > "$norm_clone"
+    else
+        _normalize_capture txt "$orig_file" "${ignore_specs[@]}" > "$norm_orig"
+        _normalize_capture txt "$clone_file" "${ignore_specs[@]}" > "$norm_clone"
+    fi
+
+    if diff -q "$norm_orig" "$norm_clone" >/dev/null 2>&1; then
+        rm -f "$norm_orig" "$norm_clone" "$norm_diff"
         MATCHES=$((MATCHES+1))
     elif [[ "$ext" == "txt" ]]; then
         echo -e "  ${R}TEXT DIFF${N}  ${DIM}${rel}${N}"
-        diff "$orig_file" "$clone_file" \
-            --label original-v1 --label clone-v1 -u | head -30 | sed 's/^/    /'
+        diff "$norm_orig" "$norm_clone" \
+            --label original-v1 --label clone-v1 -u > "$norm_diff" || true
+        head -30 "$norm_diff" | sed 's/^/    /'
+        rm -f "$norm_orig" "$norm_clone" "$norm_diff"
         TEXT_DIFFS=$((TEXT_DIFFS+1))
     elif [[ "$ext" == "ansi" ]]; then
-        orig_colors=$(grep -oP '\x1b\[[0-9;]*m' "$orig_file" 2>/dev/null | sort | uniq -c | sort -rn | head -10 || true)
-        clone_colors=$(grep -oP '\x1b\[[0-9;]*m' "$clone_file" 2>/dev/null | sort | uniq -c | sort -rn | head -10 || true)
-        if [[ "$orig_colors" != "$clone_colors" ]]; then
-            echo -e "  ${Y}COLOR DIFF${N}  ${DIM}${rel%.ansi}.txt${N}"
-            echo "    original-v1 top SGR codes:"
-            (grep -oP '\x1b\[[0-9;]*m' "$orig_file" 2>/dev/null || true) \
-                | sort | uniq -c | sort -rn | head -5 \
-                | sed "s/^ */    /" | sed 's/\x1b\[/ESC[/g'
-            echo "    clone-v1 top SGR codes:"
-            (grep -oP '\x1b\[[0-9;]*m' "$clone_file" 2>/dev/null || true) \
-                | sort | uniq -c | sort -rn | head -5 \
-                | sed "s/^ */    /" | sed 's/\x1b\[/ESC[/g'
-            COLOR_DIFFS=$((COLOR_DIFFS+1))
-        else
-            MATCHES=$((MATCHES+1))
-        fi
+        echo -e "  ${Y}COLOR DIFF${N}  ${DIM}${rel%.ansi}.txt${N}"
+        diff "$norm_orig" "$norm_clone" \
+            --label original-v1 --label clone-v1 -u > "$norm_diff" || true
+        head -30 "$norm_diff" | sed 's/^/    /'
+        rm -f "$norm_orig" "$norm_clone" "$norm_diff"
+        COLOR_DIFFS=$((COLOR_DIFFS+1))
+    else
+        rm -f "$norm_orig" "$norm_clone" "$norm_diff"
     fi
 done < <(find "${diff_roots[@]}" -type f 2>/dev/null | sort)
 

@@ -480,7 +480,12 @@ impl App {
                     ));
                 }
             }
-            let is_sel = matches!(&self.mode, Mode::Menu { menu, .. } if *menu == i);
+            let is_sel = matches!(&self.mode, Mode::Menu { menu, .. } if *menu == i)
+                || (i == 0
+                    && matches!(
+                        self.mode,
+                        Mode::Open(_) | Mode::SaveAs(_) | Mode::ConfirmNew | Mode::ConfirmExit
+                    ));
             let (bg, fg, ac) = if is_sel {
                 (sel, sel, accel_sel)
             } else {
@@ -759,7 +764,7 @@ impl App {
 
     // False when the terminal pane is focused — suppresses the editor software cursor.
     pub(super) fn editor_cursor_active(&self) -> bool {
-        !self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false)
+        self.mode == Mode::Normal && !self.term_pane.as_ref().map(|t| t.focused).unwrap_or(false)
     }
 
     // Returns the selected char-index range for a given line, if any.
@@ -992,14 +997,13 @@ impl App {
             return;
         }
 
-        let area = Self::center_rect(f, 69, 20);
+        let area = Self::center_rect(f, 67, 20);
         Self::render_shadow(f, area);
         f.render_widget(Clear, area);
 
         let bs = Style::default().bg(Color::Gray).fg(Color::Black);
-        let ts = Style::default().bg(Color::White).fg(Color::Black);
         let acs = Style::default().bg(Color::Gray).fg(Color::White);
-        let input_s = Style::default().bg(Color::White).fg(Color::Black);
+        let input_s = Style::default().bg(Color::Black).fg(Color::White);
         let scroll_s = Style::default().bg(Color::Gray).fg(Color::Black);
 
         let x = area.x;
@@ -1014,7 +1018,7 @@ impl App {
             Paragraph::new(Line::from(vec![
                 Span::styled("┌", bs),
                 Span::styled("─".repeat(ld), bs),
-                Span::styled(title, ts),
+                Span::styled(title, bs),
                 Span::styled("─".repeat(rd), bs),
                 Span::styled("┐", bs),
             ])),
@@ -1041,12 +1045,12 @@ impl App {
         );
 
         let field = Self::fit_text(input, 50);
+        let field_w = field.chars().count();
         f.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(" File ", bs),
-                Span::styled("N", acs),
-                Span::styled("ame: │", bs),
-                Span::styled(format!("{:<50}", field), input_s),
+                Span::styled(" File Name: │", bs),
+                Span::styled(field, input_s),
+                Span::styled(" ".repeat(50usize.saturating_sub(field_w)), bs),
                 Span::styled("│ ", bs),
             ])),
             Rect::new(x + 1, y + 2, iw as u16, 1),
@@ -1060,11 +1064,11 @@ impl App {
             Rect::new(x + 1, y + 3, iw as u16, 1),
         );
 
-        let cwd = env::current_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| ".".to_string());
         f.render_widget(
-            Paragraph::new(Span::styled(format!(" {:<66}", Self::fit_text(&cwd, 66)), bs)),
+            Paragraph::new(Span::styled(
+                format!(" {:<w$}", "G:\\", w = iw - 1),
+                bs,
+            )),
             Rect::new(x + 1, y + 4, iw as u16, 1),
         );
 
@@ -1088,27 +1092,29 @@ impl App {
             Rect::new(dirs_x, y + 6, 16, 1),
         );
 
-        let (files, dirs) = Self::dir_listing();
+        let drives = ["[-A-]", "[-B-]", "[-C-]", "[-D-]", "[-E-]", "[-F-]", "[-G-]", ""];
         for i in 0u16..8 {
-            let file = files.get(i as usize).map(String::as_str).unwrap_or("");
             f.render_widget(
-                Paragraph::new(Span::styled(format!("│ {:<42}│", Self::fit_text(file, 42)), bs)),
+                Paragraph::new(Span::styled(format!("│ {:<42}│", ""), bs)),
                 Rect::new(files_x, y + 7 + i, 45, 1),
             );
 
-            let dir = dirs.get(i as usize).map(String::as_str).unwrap_or("");
+            let dir = drives[i as usize];
             let sc = if i == 0 {
                 "↑"
             } else if i == 7 {
                 "↓"
+            } else if i == 1 {
+                " "
             } else {
                 "░"
             };
+            let sc_style = if i == 1 { input_s } else { scroll_s };
             f.render_widget(
                 Paragraph::new(Line::from(vec![
                     Span::styled("│ ", bs),
                     Span::styled(format!("{:<11}", Self::fit_text(dir, 11)), bs),
-                    Span::styled(sc, scroll_s),
+                    Span::styled(sc, sc_style),
                     Span::styled(" │", bs),
                 ])),
                 Rect::new(dirs_x, y + 7 + i, 16, 1),
@@ -1119,7 +1125,8 @@ impl App {
             Paragraph::new(Line::from(vec![
                 Span::styled("└", bs),
                 Span::styled("←", bs),
-                Span::styled("░".repeat(41), scroll_s),
+                Span::styled(" ", input_s),
+                Span::styled("░".repeat(40), scroll_s),
                 Span::styled("→", bs),
                 Span::styled("┘", bs),
             ])),
@@ -1142,13 +1149,9 @@ impl App {
                 Span::styled(" OK ", bs),
                 Span::styled(">", acs),
                 Span::styled("          ", bs),
-                Span::styled("<", acs),
-                Span::styled(" Cancel ", bs),
-                Span::styled(">", acs),
+                Span::styled("< Cancel >", bs),
                 Span::styled("          ", bs),
-                Span::styled("<", acs),
-                Span::styled(" Help ", bs),
-                Span::styled(">", acs),
+                Span::styled("< Help >", bs),
                 Span::styled("          ", bs),
             ])),
             Rect::new(x + 1, y + 18, iw as u16, 1),
