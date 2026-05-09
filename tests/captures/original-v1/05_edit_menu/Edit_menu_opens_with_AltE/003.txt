@@ -1,0 +1,25 @@
+   File  Edit  Search  Options                                            Help
+┌──────┌──────────────────────┐─── Untitled ───────────────────────────────────┐
+│      │ Cut        Shift+Del │                                                ↑
+│      │ Copy        Ctrl+Ins │
+│      │ Paste      Shift+Ins │                                                ░
+│      │ Clear            Del │                                                ░
+│      └──────────────────────┘                                                ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ░
+│                                                                              ↓
+│← ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░→│
+ F1=Help │ Deletes selected text and copies it to buffer      │       00001:001

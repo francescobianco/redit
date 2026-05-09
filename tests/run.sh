@@ -38,8 +38,9 @@ _start_editor() {
     tmux kill-session -t "$SESSION" 2>/dev/null || true
     case "$TARGET" in
       original)
+        local edit_dir="$REPO/dos/EDIT/V${VERSION:-v1}"
         tmux new-session -d -s "$SESSION" -x "$TERM_W" -y "$TERM_H" \
-          "dosemu -t -K '$REPO/dos/EDIT/V1' -E '${arg:-EDIT.COM}' 2>/dev/null" ;;
+          "dosemu -t -K '$edit_dir' -E '${arg:-EDIT.COM}' 2>/dev/null" ;;
       clone)
         tmux new-session -d -s "$SESSION" -x "$TERM_W" -y "$TERM_H" \
           "cd '$REPO'; env -u NO_COLOR cargo run -q -- --faithful --${VERSION} ${arg} 2>/dev/null" ;;
@@ -115,11 +116,15 @@ _step() {
           _start_editor "$f"; sleep 5 ;;
 
       "the welcome dialog is dismissed")
-          _wait_for_screen "MS-DOS Editor" 15 || true
-          if [[ "$TARGET" == "original" ]]; then
-              _send Tab Enter
+          if [[ "$VERSION" == "v1" ]]; then
+              _wait_for_screen "MS-DOS Editor" 15 || true
+              if [[ "$TARGET" == "original" ]]; then
+                  _send Tab Enter
+              else
+                  _send Escape
+              fi
           else
-              _send Escape
+              _wait_for_screen "UNTITLED" 5 || true
           fi
           sleep 1.5 ;;
 
@@ -130,7 +135,19 @@ _step() {
 
       "I press "*)
           local k="${text#I press }"
-          _send "$k"; sleep 0.5 ;;
+          case "$k" in
+            "M-o")
+              if [[ "$VERSION" == "v2" ]]; then
+                  _send F10; sleep 0.3; _send o
+              else
+                  _send "$k"
+              fi
+              ;;
+            *)
+              _send "$k"
+              ;;
+          esac
+          sleep 0.5 ;;
 
       "I wait for the editor to settle")
           sleep 1 ;;
@@ -146,6 +163,17 @@ _step() {
       "the screen shows \""*"\"")
           local s; s=$(sed 's/the screen shows "\(.*\)"/\1/' <<<"$text")
           _assert_screen_contains "$s" ;;
+
+      "the screen shows "*) local _txt="$text"
+          if [[ "$_txt" == *"(v1) or"* ]]; then
+              local _v1; _v1=$(echo "$_txt" | sed 's/.*shows "\([^"]*\)" (v1).*/\1/')
+              local _v2; _v2=$(echo "$_txt" | sed 's/.*or "\([^"]*\)" (v2).*/\1/')
+              if [[ "$VERSION" == "v1" ]]; then _assert_screen_contains "$_v1"
+              else _assert_screen_contains "$_v2"; fi
+          else
+              local s; s=$(sed 's/the screen shows "\(.*\)"/\1/' <<<"$text")
+              _assert_screen_contains "$s"
+          fi ;;
 
       "the screen does not show \""*"\"")
           local s; s=$(sed 's/the screen does not show "\(.*\)"/\1/' <<<"$text")

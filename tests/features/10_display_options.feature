@@ -1,6 +1,6 @@
 Feature: Display options
-  Options → Display opens a dialog to choose foreground color, background color,
-  scroll bar visibility, and tab stop width.
+  Options → Display (V1) or Colors (V2) opens a dialog to choose foreground color,
+  background color, scroll bar visibility, and tab stop width.
 
   Background:
     Given the editor is open
@@ -8,21 +8,24 @@ Feature: Display options
 
   Scenario: Display dialog opens from Options menu
     When I press M-o
+    And I wait 0.5
     And I press Enter
     And I wait for the editor to settle
-    Then the screen shows "Display"
+    Then the screen shows "Display (v1) or Colors (v2)"
     And the screen is captured
 
   Scenario: Display dialog contains color sections
     When I press M-o
+    And I wait 0.5
     And I press Enter
     And I wait for the editor to settle
     Then the screen shows "Foreground"
     And the screen shows "Background"
     And the screen is captured
 
-  Scenario: Display dialog contains display options
+  Scenario: Display dialog contains display options (V1 only)
     When I press M-o
+    And I wait 0.5
     And I press Enter
     And I wait for the editor to settle
     Then the screen shows "Scroll Bars"
@@ -31,6 +34,7 @@ Feature: Display options
 
   Scenario: Display dialog shows OK and Cancel buttons
     When I press M-o
+    And I wait 0.5
     And I press Enter
     And I wait for the editor to settle
     Then the screen shows "< OK >"
@@ -39,6 +43,7 @@ Feature: Display options
 
   Scenario: Display dialog closes with Escape
     When I press M-o
+    And I wait 0.5
     And I press Enter
     And I press Escape
     And I wait for the editor to settle
@@ -47,6 +52,7 @@ Feature: Display options
 
   Scenario: Display dialog closes with OK button
     When I press M-o
+    And I wait 0.5
     And I press Enter
     And I wait for the editor to settle
     And I press Tab

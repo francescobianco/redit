@@ -1,25 +1,25 @@
-[30m[47m   File  Edit  Search  Options                                            Help
-[37m[40m┌───────────────────────────[30m[47m HELP: Survival Guide [37m[40m─────────────────────────────┐
-│                                                                              [30m[47m↑
-[37m[40m│ [97mUsing the MS-DOS Editor:[37m                                                     [30m[47m░
-[37m[40m│                                                                              [30m[47m░
-[37m[40m│   ■ To activate the MS-DOS Editor menu bar, press Alt.                       [30m[47m░
-[37m[40m│   ■ To activate menus and commands, press the highlighted letter.            [30m[47m░
-[37m[40m│   ■ To move between menus and commands, use the direction keys.              [30m[47m░
-[37m[40m│   ■ To get help on a selected menu, command, or dialog box, press F1.        [30m[47m░
-[37m[40m│   ■ To exit Help, press Esc.                                                 [30m[47m░
-[37m[40m│                                                                              [30m[47m░
-[37m[40m│ [97mBrowsing the MS-DOS Editor Help system:[37m                                      [30m[47m░
-[37m[40m│                                                                              [30m[47m░
-[37m[40m│   ■ To select one of the following topics, press the Tab key or the first    [30m[47m░
-[37m[40m│     letter of the topic. Then press the Enter key to see information on:     [30m[47m░
-[37m[40m│
-│     [92m◄[37mGetting Started[92m►[37m  Loading and using the MS-DOS Editor and the           [30m[47m░
-[37m[40m│                        MS-DOS Editor Help system                             [30m[47m░
-[37m[40m│     [92m◄[37mKeyboard[92m►[37m         Editing and navigating text and MS-DOS Editor Help    [30m[47m░
-[37m[40m│                                                                              [30m[47m░
-[37m[40m│ Tip: These topics are also available from the Help menu.                     [30m[47m░
-[37m[40m│                                                                              [30m[47m↓
-[97m[44m├───────────────────────────────── Untitled ───────────────────────────────────┤
-│                                                                              │
-[46m <F1=Help> <F6=Window> <Esc=Cancel> <Ctrl+F1=Next> <Alt+F1=Back>
+[30m[47m   File  Edit  Search [37m[40m Options [30m[47m                                           Help
+[97m[44m┌─────────[30m[47m┌──────────────────────── Display ─────────────────────────┐[97m[44m─────────┐
+│         [30m[47m│ ┌─────────────────────── Colors ───────────────────────┐ │[90m[40m  [97m[44m       [30m[47m↑
+[97m[44m│         [30m[47m│ │                             Foreground   Background  │ │[90m[40m  [97m[44m       [37m[40m
+[97m[44m│         [30m[47m│ │                            ┌─────────┐  ┌─────────┐  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                            │ Gray    ↑  │ Black   ↑  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                            │ BrBlue  ░  │[37m[40m Blue     [30m[47m  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                            │ BrGreen ░  │ Green   ░  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │    [97m[44m Set colors for the [30m[47m    │ BrCyan  ░  │ Cyan    ░  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │    [97m[44m text editor window:[30m[47m    │ BrRed   ░  │ Red     ░  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                            │ Pink    ░  │ Magenta ░  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                            │ Yellow  [37m[40m [30m[47m  │ Brown   ░  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                            │[37m[40m BrWhite [30m[47m↓  │ White   ↓  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                            └─────────┘  └─────────┘  │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │                                                      │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ └──────────────────────────────────────────────────────┘ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│                                                          │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ ┌────────────────── Display Options ───────────────────┐ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ │   [X] Scroll Bars                  Tab Stops: 8      │ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│ └──────────────────────────────────────────────────────┘ │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m├──────────────────────────────────────────────────────────┤[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m│         [97m<[30m OK [97m>[30m        < Cancel >        < Help >         │[90m[40m  [97m[44m       [30m[47m░
+[97m[44m│         [30m[47m└──────────────────────────────────────────────────────────┘[90m[40m  [97m[44m       [30m[47m↓
+[97m[44m│[30m[47m←[37m[40m [30m[47m░░░░░░░░░[90m[40m░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░[30m[47m░░░░░░→[97m[44m│
+[46m F1=Help   Enter=Execute   Esc=Cancel   Tab=Next Field   Arrow=Next Item

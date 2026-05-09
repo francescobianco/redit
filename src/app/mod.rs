@@ -470,7 +470,9 @@ impl App {
             base,
         )];
         for (i, name) in MENUS.iter().enumerate() {
-            if self.theme.version == Version::V1 && i == MENUS.len() - 1 {
+            // Add extra spacing before "Help" for V1 or V2 in faithful mode
+            let is_v1_or_v2_faithful = self.theme.version == Version::V1 || (self.theme.version == Version::V2 && self.faithful);
+            if is_v1_or_v2_faithful && i == MENUS.len() - 1 {
                 let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
                 let help_w = name.len() + 2;
                 if area.width as usize > used + help_w {
@@ -1549,6 +1551,11 @@ impl App {
         tab_stops: u8,
         focus: usize,
     ) {
+        // V2 with faithful mode: use V1 styling
+        if self.faithful && self.theme.version == Version::V2 {
+            return self.display_settings_dialog_v1_style(f, fg_idx, bg_idx, fg_scroll, scroll_bars, tab_stops, focus);
+        }
+
         // V1-faithful Display dialog:
         //   Colors section  (Foreground + Background list boxes)
         //   Display Options section  ([X] Scroll Bars   Tab Stops: N)
@@ -1774,6 +1781,270 @@ impl App {
             Paragraph::new(Span::styled("< Help >", he_s)),
             Rect::new(he_x, btn_y, 8, 1),
         );
+
+        // Focus highlights on list box borders
+        for (lx, fi) in [(lb1_x, 0usize), (lb2_x, 1)] {
+            if focus == fi {
+                let box_top_y = ci_y + 1;
+                let box_bot_y = ci_y + 10;
+                f.render_widget(
+                    Paragraph::new(Span::styled(
+                        format!("┌{}┐", "─".repeat(list_inner)),
+                        sel_s,
+                    )),
+                    Rect::new(lx, box_top_y, list_w as u16, 1),
+                );
+                f.render_widget(
+                    Paragraph::new(Span::styled(
+                        format!("└{}┘", "─".repeat(list_inner)),
+                        sel_s,
+                    )),
+                    Rect::new(lx, box_bot_y, list_w as u16, 1),
+                );
+                for rr in 0..8u16 {
+                    f.render_widget(
+                        Paragraph::new(Span::styled("│", sel_s)),
+                        Rect::new(lx, box_top_y + 1 + rr, 1, 1),
+                    );
+                    f.render_widget(
+                        Paragraph::new(Span::styled("│", sel_s)),
+                        Rect::new(lx + list_w as u16 - 1, box_top_y + 1 + rr, 1, 1),
+                    );
+                }
+            }
+        }
+    }
+
+    // V2 with faithful mode: display dialog with V1 styling
+    fn display_settings_dialog_v1_style(
+        &self,
+        f: &mut Frame,
+        fg_idx: usize,
+        bg_idx: usize,
+        fg_scroll: usize,
+        scroll_bars: bool,
+        tab_stops: u8,
+        focus: usize,
+    ) {
+        // Same dialog as V1 but with 70 width to accommodate scrollbar columns
+        if f.area().width < 70 || f.area().height < 22 {
+            self.confirm_dialog(f, "Display", "Terminal is too small.");
+            return;
+        }
+
+        let area = Self::center_rect(f, 70, 22);
+        Self::render_shadow(f, area);
+        f.render_widget(Clear, area);
+
+        let box_s = Style::default().bg(Color::Gray).fg(Color::Black);
+        let title_s = Style::default().bg(Color::White).fg(Color::Black);
+        let sel_s = Style::default().bg(Color::Black).fg(Color::White);
+        let inner_w = area.width.saturating_sub(2) as usize;
+
+        // Outer box borders
+        self.draw_box(f, area, box_s, " Display ", title_s);
+
+        // Colors sub-box with space for scrollbar columns on both sides
+        let scrollbar_pad = 2i32;
+        let cb_x = area.x + 1 + scrollbar_pad as u16;
+        let cb_y = area.y + 1;
+        let content_w = 64u16;
+        let cb_w = content_w;
+        let cb_h: u16 = 14;
+        self.draw_box(
+            f,
+            Rect::new(cb_x, cb_y, cb_w, cb_h),
+            box_s,
+            " Colors ",
+            title_s,
+        );
+
+        // Column headers inside Colors box
+        let ci_x = cb_x + 1;
+        let ci_y = cb_y + 1;
+        let ci_w = cb_w.saturating_sub(2) as usize;
+
+        let label_w: usize = 26;
+        let list_inner: usize = 10;
+        let list_w: usize = list_inner + 2;
+        let gap: usize = 2;
+
+        let hdr_spaces = label_w + 1;
+        let header = format!(
+            "{:hdr$}Foreground   Background",
+            "",
+            hdr = hdr_spaces + 1
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("{:<w$}", header, w = ci_w),
+                box_s,
+            )),
+            Rect::new(ci_x, ci_y, ci_w as u16, 1),
+        );
+
+        // List box tops
+        let lb1_x = ci_x + label_w as u16;
+        let lb2_x = lb1_x + list_w as u16 + gap as u16;
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("┌{}┐", "─".repeat(list_inner)),
+                box_s,
+            )),
+            Rect::new(lb1_x, ci_y + 1, list_w as u16, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("┌{}┐", "─".repeat(list_inner)),
+                box_s,
+            )),
+            Rect::new(lb2_x, ci_y + 1, list_w as u16, 1),
+        );
+
+        // List box contents (8 rows)
+        for row in 0..8usize {
+            let ry = ci_y + 2 + row as u16;
+
+            let fg_item_idx = fg_scroll + row;
+            let fg_name = if fg_item_idx < V1_FG_COLORS.len() {
+                V1_FG_COLORS[fg_item_idx].0
+            } else {
+                ""
+            };
+            let fg_sel = fg_item_idx == fg_idx;
+            let fg_sb = self.list_scrollbar_char(row, fg_idx, fg_scroll, V1_FG_COLORS.len());
+            let fg_content = format!(" {:<8}{}  ", fg_name, fg_sb);
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_s)),
+                Rect::new(lb1_x, ry, 1, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled(&fg_content, if fg_sel { Style::default().bg(Color::Black).fg(Color::White) } else { box_s })),
+                Rect::new(lb1_x + 1, ry, list_inner as u16, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_s)),
+                Rect::new(lb1_x + list_w as u16 - 1, ry, 1, 1),
+            );
+
+            let bg_name = if row < V1_BG_COLORS.len() {
+                V1_BG_COLORS[row].0
+            } else {
+                ""
+            };
+            let bg_sel = row == bg_idx;
+            let bg_sb = self.list_scrollbar_char(row, bg_idx, 0, V1_BG_COLORS.len());
+            let bg_content = format!(" {:<8}{}  ", bg_name, bg_sb);
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_s)),
+                Rect::new(lb2_x, ry, 1, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled(&bg_content, if bg_sel { Style::default().bg(Color::Black).fg(Color::White) } else { box_s })),
+                Rect::new(lb2_x + 1, ry, list_inner as u16, 1),
+            );
+            f.render_widget(
+                Paragraph::new(Span::styled("│", box_s)),
+                Rect::new(lb2_x + list_w as u16 - 1, ry, 1, 1),
+            );
+
+            let label_text = match row {
+                3 => "     Set colors for the",
+                4 => "     text editor window:",
+                _ => "",
+            };
+            if !label_text.is_empty() {
+                f.render_widget(
+                    Paragraph::new(Span::styled(label_text, box_s)),
+                    Rect::new(ci_x, ry, label_w as u16, 1),
+                );
+            }
+        }
+
+        // List box bottoms
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("└{}┘", "─".repeat(list_inner)),
+                box_s,
+            )),
+            Rect::new(lb1_x, ci_y + 10, list_w as u16, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("└{}┘", "─".repeat(list_inner)),
+                box_s,
+            )),
+            Rect::new(lb2_x, ci_y + 10, list_w as u16, 1),
+        );
+
+        // Display Options sub-box
+        let ob_y = area.y + 16;
+        let ob_w = area.width.saturating_sub(2);
+        self.draw_box(
+            f,
+            Rect::new(cb_x, ob_y, ob_w, 3),
+            box_s,
+            " Display Options ",
+            title_s,
+        );
+        let sb_check = if scroll_bars { "[X]" } else { "[ ]" };
+        let sb_style = if focus == 2 { sel_s } else { box_s };
+        let ts_style = if focus == 3 { sel_s } else { box_s };
+        let sb_label = format!("   {} Scroll Bars", sb_check);
+        let ts_label = format!("Tab Stops: {}", tab_stops);
+        f.render_widget(
+            Paragraph::new(Span::styled(&sb_label, sb_style)),
+            Rect::new(cb_x + 1, ob_y + 1, (sb_label.len()) as u16, 1),
+        );
+        let ts_x = cb_x + 1 + 38;
+        if ts_x + ts_label.len() as u16 <= area.x + area.width - 1 {
+            f.render_widget(
+                Paragraph::new(Span::styled(&ts_label, ts_style)),
+                Rect::new(ts_x, ob_y + 1, ts_label.len() as u16, 1),
+            );
+        }
+
+        // Separator + Buttons
+        let sep_y = area.y + area.height - 3;
+        let btn_y = area.y + area.height - 2;
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                format!("├{}┤", "─".repeat(inner_w)),
+                box_s,
+            )),
+            Rect::new(area.x, sep_y, area.width, 1),
+        );
+
+        let ok_s = if focus == 4 { sel_s } else { box_s };
+        let ca_s = if focus == 5 { sel_s } else { box_s };
+        let he_s = if focus == 6 { sel_s } else { box_s };
+        let ok_x = area.x + 9;
+        let ca_x = ok_x + 14;
+        let he_x = ca_x + 14;
+        f.render_widget(
+            Paragraph::new(Span::styled("< OK >", ok_s)),
+            Rect::new(ok_x, btn_y, 6, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled("< Cancel >", ca_s)),
+            Rect::new(ca_x, btn_y, 10, 1),
+        );
+        f.render_widget(
+            Paragraph::new(Span::styled("< Help >", he_s)),
+            Rect::new(he_x, btn_y, 8, 1),
+        );
+
+        // Horizontal scrollbar at bottom
+        let hs_y = area.y + area.height - 1;
+        if hs_y + 1 < f.area().height {
+            let track_w = inner_w - 2;
+            let hs_track: String = std::iter::repeat('░').take(track_w).collect();
+            let hs_line = format!("│←{}→│", hs_track);
+            f.render_widget(
+                Paragraph::new(Span::styled(hs_line, box_s)),
+                Rect::new(area.x, hs_y + 1, area.width, 1),
+            );
+        }
 
         // Focus highlights on list box borders
         for (lx, fi) in [(lb1_x, 0usize), (lb2_x, 1)] {
